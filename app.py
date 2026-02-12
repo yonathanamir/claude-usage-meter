@@ -12,194 +12,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
-from PySide6.QtCore import (
-    QEasingCurve,
-    QObject,
-    QPoint,
-    QPropertyAnimation,
-    QRect,
-    Qt,
-    QThread,
-    QTimer,
-    Signal,
-)
-from PySide6.QtGui import (
-    QAction,
-    QColor,
-    QFont,
-    QFontMetrics,
-    QIcon,
-    QImage,
-    QPainter,
-    QPen,
-    QPixmap,
-    QRadialGradient,
-)
-from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
-
-from settings import SettingsDialog, SETTINGS_PATH, DEFAULT_SETTINGS
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-CREDENTIALS_PATH = Path.home() / ".claude" / ".credentials.json"
-POSITION_PATH = Path.home() / ".claude" / "meter-position.json"
-
-API_BASE = "https://api.anthropic.com"
-USAGE_URL = f"{API_BASE}/api/oauth/usage"
-TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
-CLIENT_ID = "YOUR_CLIENT_ID_HERE"
-BETA_HEADER = "oauth-2025-04-20"
-
-POLL_INTERVAL_MS = 5 * 60 * 1000  # 5 minutes
-
-EDGE_MARGIN = 12
-
-# Display modes the circle cycles through on left-click
-MODE_SESSION = 0   # five_hour
-MODE_WEEKLY = 1    # seven_day
-MODE_KEYS = ["five_hour", "seven_day"]
-MODE_LABELS = ["5h", "7d"]
-
-COLOR_BG = QColor("#1a1714")
-COLOR_ORANGE = QColor("#d9773c")
-COLOR_AMBER = QColor("#e8a838")
-COLOR_RED = QColor("#e74c3c")
-COLOR_GREEN = QColor("#27ae60")
+from usage import UsageFetcher
+from vendors.claude import Claude
+from vendors.gemini import Gemini
 
 
-def color_for_percent(pct: float) -> QColor:
-    if pct > 80:
-        return COLOR_RED
-    if pct > 50:
-        return COLOR_AMBER
-    return COLOR_ORANGE
 
-
-# ---------------------------------------------------------------------------
-# UsageFetcher — runs in a QThread
-# ---------------------------------------------------------------------------
-
-class UsageFetcher(QObject):
-    finished = Signal(dict)
-    error = Signal(str)
-
-    def _read_credentials(self):
-        if not CREDENTIALS_PATH.exists():
-            return None
-        with open(CREDENTIALS_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data.get("claudeAiOauth")
-
-    def _refresh_token(self, refresh_token: str):
-        """Exchange a refresh token for a new access token."""
-        payload = {
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": CLIENT_ID,
-            "scope": "user:profile user:inference user:sessions:claude_code user:mcp_servers",
-        }
-        r = requests.post(TOKEN_URL, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
-        if r.status_code != 200:
-            return None
-        body = r.json()
-        access_token = body.get("access_token")
-        new_refresh = body.get("refresh_token", refresh_token)
-        expires_in = body.get("expires_in", 3600)
-        expires_at = int(time.time() * 1000) + expires_in * 1000
-
-        # Persist refreshed tokens
-        if CREDENTIALS_PATH.exists():
-            with open(CREDENTIALS_PATH, "r", encoding="utf-8") as f:
-                full = json.load(f)
-            oauth = full.get("claudeAiOauth", {})
-            oauth["accessToken"] = access_token
-            oauth["refreshToken"] = new_refresh
-            oauth["expiresAt"] = expires_at
-            full["claudeAiOauth"] = oauth
-            with open(CREDENTIALS_PATH, "w", encoding="utf-8") as f:
-                json.dump(full, f, indent=2)
-
-        return access_token
-
-    def _login(self):
-        """Spawn `claude /login` and wait for user to complete OAuth."""
-        try:
-            subprocess.run("claude.cmd /login", shell=True, timeout=120)
-        except Exception:
-            pass
-
-    def _build_headers(self, token: str) -> dict:
-        return {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "anthropic-beta": BETA_HEADER,
-            "User-Agent": "claude-code-usage-meter/1.0",
-        }
-
-    def _fetch(self, token: str):
-        r = requests.get(USAGE_URL, headers=self._build_headers(token), timeout=10)
-        return r
-
-    def run(self):
-        try:
-            creds = self._read_credentials()
-            if not creds:
-                self._login()
-                creds = self._read_credentials()
-                if not creds:
-                    self.error.emit("No credentials found after login")
-                    return
-
-            token = creds.get("accessToken")
-            expires_at = creds.get("expiresAt", 0)
-
-            # Refresh if expired
-            if expires_at < time.time() * 1000:
-                refresh = creds.get("refreshToken")
-                if refresh:
-                    token = self._refresh_token(refresh)
-                if not token:
-                    self._login()
-                    creds = self._read_credentials()
-                    if not creds:
-                        self.error.emit("Login failed")
-                        return
-                    token = creds.get("accessToken")
-
-            resp = self._fetch(token)
-
-            # Retry once on auth failure
-            if resp.status_code in (401, 403):
-                refresh = creds.get("refreshToken")
-                if refresh:
-                    token = self._refresh_token(refresh)
-                if not token or (resp := self._fetch(token)).status_code in (401, 403):
-                    self._login()
-                    creds = self._read_credentials()
-                    if not creds:
-                        self.error.emit("Auth failed")
-                        return
-                    token = creds["accessToken"]
-                    resp = self._fetch(token)
-
-            if resp.status_code != 200:
-                self.error.emit(f"API {resp.status_code}: {resp.text[:200]}")
-                return
-
-            data = resp.json()
-            # Attach subscription info from credentials
-            creds = self._read_credentials()
-            if creds:
-                data["_subscriptionType"] = creds.get("subscriptionType", "")
-                data["_rateLimitTier"] = creds.get("rateLimitTier", "")
-            data["_fetchedAt"] = datetime.now(timezone.utc).isoformat()
-            self.finished.emit(data)
-
-        except Exception as exc:
-            self.error.emit(str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +49,12 @@ class TooltipWidget(QWidget):
     def _rows(self) -> list[tuple[str, dict | None]]:
         if not self._data:
             return []
+        
+        active_vendor_name = self.settings.get("enabled_vendors", ["Claude"])[0]
+        vendor_data = self._data.get(active_vendor_name)
+        if not vendor_data:
+            return []
+
         rows = []
         mapping = [
             ("five_hour", "Current session (5h)"),
@@ -241,7 +65,7 @@ class TooltipWidget(QWidget):
             ("seven_day_cowork", "Weekly (Cowork)"),
         ]
         for key, label in mapping:
-            val = self._data.get(key)
+            val = vendor_data.get(key)
             if val:
                 rows.append((label, val))
         return rows
@@ -279,17 +103,26 @@ class TooltipWidget(QWidget):
             p.end()
             return
 
+        active_vendor_name = self.settings.get("enabled_vendors", ["Claude"])[0]
+        vendor_data = self._data.get(active_vendor_name)
+        if not vendor_data:
+            p.setPen(QColor("#aaa"))
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 10))
+            p.drawText(self.rect(), Qt.AlignCenter, f"No data for {active_vendor_name}")
+            p.end()
+            return
+
         x_pad = 14
         y = 14
 
         # Plan name
-        sub_type = self._data.get("_subscriptionType", "unknown")
+        sub_type = vendor_data.get("_subscriptionType", "unknown")
         plan_label = {"pro": "Pro", "max": "Max", "team": "Team", "enterprise": "Enterprise"}.get(sub_type, sub_type.title() if sub_type else "Unknown")
-        tier = self._data.get("_rateLimitTier", "")
+        tier = vendor_data.get("_rateLimitTier", "")
 
         p.setPen(QColor(self.settings.get("font_color", DEFAULT_SETTINGS["font_color"])))
         p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 11, QFont.Bold))
-        p.drawText(x_pad, y + 14, f"Claude {plan_label}")
+        p.drawText(x_pad, y + 14, f"{active_vendor_name} {plan_label}")
 
         if tier:
             tier_short = tier.replace("default_claude_", "").replace("_", " ").title()
@@ -362,7 +195,7 @@ class TooltipWidget(QWidget):
             y += bar_h + 16
 
         # Extra usage
-        extra = self._data.get("extra_usage")
+        extra = vendor_data.get("extra_usage")
         if extra and extra.get("is_enabled"):
             p.setPen(QColor("#888"))
             p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 8))
@@ -375,7 +208,7 @@ class TooltipWidget(QWidget):
             y += 16
 
         # Last updated
-        fetched = self._data.get("_fetchedAt", "")
+        fetched = vendor_data.get("_fetchedAt", "")
         if fetched:
             try:
                 ft = datetime.fromisoformat(fetched)
@@ -417,6 +250,12 @@ class MeterWidget(QWidget):
         self._tooltip: TooltipWidget | None = None
 
         self.load_settings()
+
+        self.vendors = {
+            "Claude": Claude(api_key=self.settings.get("claude_api_key")),
+            "Gemini": Gemini(api_key=self.settings.get("gemini_api_key"))
+        }
+        self.enabled_vendors = self.settings.get("enabled_vendors", ["Claude"])
         
         self._tooltip = TooltipWidget(settings=self.settings)
 
@@ -435,14 +274,18 @@ class MeterWidget(QWidget):
 
         # Periodic poll timer
         self._timer = QTimer(self)
-        self._timer.timeout.connect(self.fetch_usage)
+        self._timer.timeout.connect(self.fetch_all_usages)
         self._timer.start(POLL_INTERVAL_MS)
 
         # Load saved position or default
         self._load_position()
 
         # Initial fetch
-        QTimer.singleShot(500, self.fetch_usage)
+        QTimer.singleShot(500, self.fetch_all_usages)
+
+    def fetch_all_usages(self):
+        for vendor_name in self.enabled_vendors:
+            self.fetch_usage(vendor_name)
 
     def load_settings(self):
         if not SETTINGS_PATH.exists():
@@ -468,11 +311,21 @@ class MeterWidget(QWidget):
 
     # -- helpers --------------------------------------------------------------
 
+    def _active_vendor_name(self) -> str | None:
+        return self.enabled_vendors[0] if self.enabled_vendors else None
+
+    def _active_vendor_data(self) -> dict | None:
+        vendor_name = self._active_vendor_name()
+        if not vendor_name or not self._data:
+            return None
+        return self._data.get(vendor_name)
+
     def _active_bucket(self) -> dict | None:
         """Return the usage dict for the currently selected mode."""
-        if not self._data:
+        vendor_data = self._active_vendor_data()
+        if not vendor_data:
             return None
-        return self._data.get(MODE_KEYS[self._mode])
+        return vendor_data.get(MODE_KEYS[self._mode])
 
     def _active_percent(self) -> float:
         b = self._active_bucket()
@@ -511,18 +364,34 @@ class MeterWidget(QWidget):
     # -- Data -----------------------------------------------------------------
 
     def set_data(self, data: dict):
-        self._data = data
-        self._tooltip.set_data(data)
+        vendor_name = data.get("vendor")
+        usage = data.get("usage")
+        if not vendor_name or not usage:
+            return
+    
+        if self._data is None:
+            self._data = {}
+    
+        self._data[vendor_name] = usage
+        self._tooltip.set_data(self._data)
         self.update()
 
     def on_fetch_error(self, msg: str):
         print(f"[meter] fetch error: {msg}", file=sys.stderr)
 
-    def fetch_usage(self):
+    def fetch_usage(self, vendor_name: str):
         if self._thread and self._thread.isRunning():
+            # For simplicity, we'll just skip if a fetch is already in progress.
+            # A more robust solution might queue requests.
             return
+
+        vendor = self.vendors.get(vendor_name)
+        if not vendor:
+            self.on_fetch_error(f"Unknown vendor: {vendor_name}")
+            return
+
         self._thread = QThread()
-        self._fetcher = UsageFetcher()
+        self._fetcher = UsageFetcher(vendor)
         self._fetcher.moveToThread(self._thread)
         self._thread.started.connect(self._fetcher.run)
         self._fetcher.finished.connect(self.set_data)
