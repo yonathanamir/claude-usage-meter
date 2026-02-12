@@ -38,6 +38,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
 
+from settings import SettingsDialog, SETTINGS_PATH, DEFAULT_SETTINGS
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -53,7 +55,6 @@ BETA_HEADER = "oauth-2025-04-20"
 
 POLL_INTERVAL_MS = 5 * 60 * 1000  # 5 minutes
 
-CIRCLE_SIZE = 72
 EDGE_MARGIN = 12
 
 # Display modes the circle cycles through on left-click
@@ -206,8 +207,9 @@ class UsageFetcher(QObject):
 # ---------------------------------------------------------------------------
 
 class TooltipWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, settings=None):
         super().__init__(parent)
+        self.settings = settings or DEFAULT_SETTINGS
         self.setWindowFlags(
             Qt.FramelessWindowHint
             | Qt.WindowStaysOnTopHint
@@ -264,7 +266,7 @@ class TooltipWidget(QWidget):
         p.drawRoundedRect(self.rect().adjusted(4, 4, -4, -4), 10, 10)
 
         # Border
-        border = QColor("#d9773c")
+        border = QColor(self.settings.get("font_color", DEFAULT_SETTINGS["font_color"]))
         border.setAlpha(60)
         p.setPen(QPen(border, 1))
         p.setBrush(Qt.NoBrush)
@@ -272,7 +274,7 @@ class TooltipWidget(QWidget):
 
         if not self._data:
             p.setPen(QColor("#aaa"))
-            p.setFont(QFont("Segoe UI", 10))
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 10))
             p.drawText(self.rect(), Qt.AlignCenter, "Loading...")
             p.end()
             return
@@ -285,14 +287,14 @@ class TooltipWidget(QWidget):
         plan_label = {"pro": "Pro", "max": "Max", "team": "Team", "enterprise": "Enterprise"}.get(sub_type, sub_type.title() if sub_type else "Unknown")
         tier = self._data.get("_rateLimitTier", "")
 
-        p.setPen(COLOR_ORANGE)
-        p.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        p.setPen(QColor(self.settings.get("font_color", DEFAULT_SETTINGS["font_color"])))
+        p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 11, QFont.Bold))
         p.drawText(x_pad, y + 14, f"Claude {plan_label}")
 
         if tier:
             tier_short = tier.replace("default_claude_", "").replace("_", " ").title()
             p.setPen(QColor("#888"))
-            p.setFont(QFont("Segoe UI", 8))
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 8))
             p.drawText(x_pad, y + 28, tier_short)
 
         y += 38
@@ -311,7 +313,7 @@ class TooltipWidget(QWidget):
 
             # Label + percentage
             p.setPen(QColor("#ccc"))
-            p.setFont(QFont("Segoe UI", 9))
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 9))
             p.drawText(x_pad, y + 13, label)
 
             pct_text = f"{util:.0f}%"
@@ -343,9 +345,16 @@ class TooltipWidget(QWidget):
                     total_sec = max(0, int(delta.total_seconds()))
                     hours = total_sec // 3600
                     mins = (total_sec % 3600) // 60
-                    reset_str = f"resets in {hours}h {mins}m" if hours else f"resets in {mins}m"
+                    
+                    display_mode = self.settings.get("current_session_display") if "session" in label.lower() else self.settings.get("weekly_session_display")
+
+                    if display_mode == "Date":
+                        reset_str = f"resets on {reset_dt.strftime('%b %d')}"
+                    else: # Time Until
+                        reset_str = f"resets in {hours}h {mins}m" if hours else f"resets in {mins}m"
+
                     p.setPen(QColor("#666"))
-                    p.setFont(QFont("Segoe UI", 7))
+                    p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 7))
                     p.drawText(x_pad, y + bar_h + 10, reset_str)
                 except Exception:
                     pass
@@ -356,7 +365,7 @@ class TooltipWidget(QWidget):
         extra = self._data.get("extra_usage")
         if extra and extra.get("is_enabled"):
             p.setPen(QColor("#888"))
-            p.setFont(QFont("Segoe UI", 8))
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 8))
             limit = extra.get("monthly_limit")
             used = extra.get("used_credits")
             if limit is not None and used is not None:
@@ -379,7 +388,7 @@ class TooltipWidget(QWidget):
             except Exception:
                 age_str = ""
             p.setPen(QColor("#555"))
-            p.setFont(QFont("Segoe UI", 7))
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 7))
             p.drawText(x_pad, self.height() - 10, f"Updated {age_str}")
 
         p.end()
@@ -398,16 +407,22 @@ class MeterWidget(QWidget):
             | Qt.Tool
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setFixedSize(CIRCLE_SIZE, CIRCLE_SIZE)
 
+        self.settings = {}
         self._data: dict | None = None
-        self._mode = MODE_SESSION  # which bucket to display
+        self._mode = MODE_SESSION
         self._dragging = False
-        self._drag_started = False  # True once mouse actually moves
+        self._drag_started = False
         self._drag_offset = QPoint()
+        self._tooltip: TooltipWidget | None = None
 
-        # Tooltip
-        self._tooltip = TooltipWidget()
+        self.load_settings()
+        
+        self._tooltip = TooltipWidget(settings=self.settings)
+
+        self.apply_settings()
+
+        self._mode = MODE_SESSION  # which bucket to display
 
         # Snap animation
         self._snap_anim = QPropertyAnimation(self, b"pos")
@@ -429,6 +444,28 @@ class MeterWidget(QWidget):
         # Initial fetch
         QTimer.singleShot(500, self.fetch_usage)
 
+    def load_settings(self):
+        if not SETTINGS_PATH.exists():
+            self.settings = DEFAULT_SETTINGS
+            return
+        with open(SETTINGS_PATH, "r") as f:
+            try:
+                self.settings = json.load(f)
+                # Ensure all keys are present
+                for key, value in DEFAULT_SETTINGS.items():
+                    if key not in self.settings:
+                        self.settings[key] = value
+            except json.JSONDecodeError:
+                self.settings = DEFAULT_SETTINGS
+
+    def apply_settings(self):
+        radius = self.settings.get("radius", 10)
+        size = 2 * radius + 2 * EDGE_MARGIN
+        self.setFixedSize(size, size)
+        if self._tooltip:
+            self._tooltip.settings = self.settings
+        self.update()
+
     # -- helpers --------------------------------------------------------------
 
     def _active_bucket(self) -> dict | None:
@@ -445,23 +482,29 @@ class MeterWidget(QWidget):
         b = self._active_bucket()
         return (b.get("resets_at", "") or "") if b else ""
 
-    @staticmethod
-    def _format_reset(resets_iso: str) -> str:
+    def _format_reset(self, resets_iso: str) -> str:
         """Return a compact string like '2h 14m' or '3d 5h'."""
         if not resets_iso:
             return ""
         try:
             reset_dt = datetime.fromisoformat(resets_iso)
-            delta = reset_dt - datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc)
+            delta = reset_dt - now
             total_sec = max(0, int(delta.total_seconds()))
             days = total_sec // 86400
             hours = (total_sec % 86400) // 3600
             mins = (total_sec % 3600) // 60
-            if days:
-                return f"{days}d {hours}h"
-            if hours:
-                return f"{hours}h {mins}m"
-            return f"{mins}m"
+            
+            display_mode = self.settings.get("current_session_display") if self._mode == MODE_SESSION else self.settings.get("weekly_session_display")
+
+            if display_mode == "Date":
+                return f"{reset_dt.strftime('%b %d')}"
+            else: # Time Until
+                if days:
+                    return f"{days}d {hours}h"
+                if hours:
+                    return f"{hours}h {mins}m"
+                return f"{mins}m"
         except Exception:
             return ""
 
@@ -495,9 +538,11 @@ class MeterWidget(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
 
         pct = self._active_percent()
-        cx, cy = CIRCLE_SIZE // 2, CIRCLE_SIZE // 2
-        radius = CIRCLE_SIZE // 2 - 4
-
+        
+        radius = self.settings.get("radius", 10)
+        circle_size = 2 * radius + 2 * EDGE_MARGIN
+        cx, cy = circle_size // 2, circle_size // 2
+        
         # Drop shadow
         shadow = QRadialGradient(cx, cy + 2, radius + 6)
         shadow.setColorAt(0, QColor(0, 0, 0, 80))
@@ -521,7 +566,7 @@ class MeterWidget(QWidget):
         p.drawArc(ring_rect, 0, 360 * 16)
 
         # Progress arc
-        arc_color = color_for_percent(pct) if pct > 0 else COLOR_ORANGE
+        arc_color = color_for_percent(pct) if pct > 0 else QColor(self.settings.get("font_color", DEFAULT_SETTINGS["font_color"]))
         if pct > 0:
             arc_pen = QPen(arc_color, 5)
             arc_pen.setCapStyle(Qt.RoundCap)
@@ -539,12 +584,12 @@ class MeterWidget(QWidget):
         # --- Center: percentage number (shifted up to make room for reset line) ---
         p.setPen(arc_color)
         if self._data:
-            p.setFont(QFont("Segoe UI", 15, QFont.Bold))
-            p.drawText(QRect(0, 0, CIRCLE_SIZE, cy + 2),
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("font_size", DEFAULT_SETTINGS["font_size"]), QFont.Bold))
+            p.drawText(QRect(0, 0, circle_size, cy + 2),
                        Qt.AlignHCenter | Qt.AlignBottom,
                        f"{int(pct)}")
         else:
-            p.setFont(QFont("Segoe UI", 13, QFont.Bold))
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("font_size", DEFAULT_SETTINGS["font_size"]) - 2, QFont.Bold))
             p.drawText(self.rect(), Qt.AlignCenter, "...")
             p.end()
             return
@@ -555,8 +600,8 @@ class MeterWidget(QWidget):
         bottom_text = f"{reset_str}  {mode_label}" if reset_str else mode_label
 
         p.setPen(QColor(200, 200, 200, 140))
-        p.setFont(QFont("Segoe UI", 7))
-        p.drawText(QRect(0, cy + 4, CIRCLE_SIZE, 16),
+        p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("font_size", DEFAULT_SETTINGS["font_size"]) - 5))
+        p.drawText(QRect(0, cy + 4, circle_size, 16),
                    Qt.AlignHCenter | Qt.AlignTop,
                    bottom_text)
 
@@ -590,15 +635,17 @@ class MeterWidget(QWidget):
     def _snap_to_edge(self):
         screen = QApplication.primaryScreen().availableGeometry()
         pos = self.pos()
-        mid_x = pos.x() + CIRCLE_SIZE // 2
+        radius = self.settings.get("radius", 10)
+        circle_size = 2 * radius + 2 * EDGE_MARGIN
+        mid_x = pos.x() + circle_size // 2
 
         if mid_x < screen.center().x():
             target_x = screen.left() + EDGE_MARGIN
         else:
-            target_x = screen.right() - CIRCLE_SIZE - EDGE_MARGIN
+            target_x = screen.right() - circle_size - EDGE_MARGIN
 
         # Clamp Y
-        target_y = max(screen.top() + EDGE_MARGIN, min(pos.y(), screen.bottom() - CIRCLE_SIZE - EDGE_MARGIN))
+        target_y = max(screen.top() + EDGE_MARGIN, min(pos.y(), screen.bottom() - circle_size - EDGE_MARGIN))
 
         target = QPoint(target_x, target_y)
         self._snap_anim.setStartValue(self.pos())
@@ -626,8 +673,10 @@ class MeterWidget(QWidget):
             pass
         # Default: right-center
         screen = QApplication.primaryScreen().availableGeometry()
-        x = screen.right() - CIRCLE_SIZE - EDGE_MARGIN
-        y = screen.center().y() - CIRCLE_SIZE // 2
+        radius = self.settings.get("radius", 10)
+        circle_size = 2 * radius + 2 * EDGE_MARGIN
+        x = screen.right() - circle_size - EDGE_MARGIN
+        y = screen.center().y() - circle_size // 2
         self.move(x, y)
 
     # -- Tooltip --------------------------------------------------------------
@@ -641,11 +690,13 @@ class MeterWidget(QWidget):
     def _show_tooltip(self):
         screen = QApplication.primaryScreen().availableGeometry()
         pos = self.pos()
+        radius = self.settings.get("radius", 10)
+        circle_size = 2 * radius + 2 * EDGE_MARGIN
 
         # Position tooltip to the left or right of the circle
         tt_w = self._tooltip.width()
-        if pos.x() + CIRCLE_SIZE + tt_w + 8 <= screen.right():
-            tx = pos.x() + CIRCLE_SIZE + 8
+        if pos.x() + circle_size + tt_w + 8 <= screen.right():
+            tx = pos.x() + circle_size + 8
         else:
             tx = pos.x() - tt_w - 8
 
@@ -674,6 +725,7 @@ class MeterWidget(QWidget):
         """)
         refresh_action = menu.addAction("Refresh")
         login_action = menu.addAction("Log in")
+        settings_action = menu.addAction("Settings")
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
 
@@ -685,8 +737,17 @@ class MeterWidget(QWidget):
                 subprocess.Popen("claude.cmd /login", shell=True)
             except Exception:
                 pass
+        elif action == settings_action:
+            self.show_settings()
         elif action == quit_action:
             QApplication.quit()
+
+    def show_settings(self):
+        dialog = SettingsDialog(self)
+        if dialog.exec():
+            self.load_settings()
+            self.apply_settings()
+
 
 
 # ---------------------------------------------------------------------------
