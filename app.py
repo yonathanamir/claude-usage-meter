@@ -9,6 +9,7 @@ import json
 import subprocess
 import sys
 import time
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -70,7 +71,13 @@ COLOR_RED = QColor("#e74c3c")
 COLOR_GREEN = QColor("#27ae60")
 
 
-def color_for_percent(pct: float) -> QColor:
+def color_for_percent(pct: float, settings: dict | None = None) -> QColor:
+    if settings:
+        if pct > 80:
+            return QColor(settings.get("color_red", "#e74c3c"))
+        if pct > 50:
+            return QColor(settings.get("color_amber", "#e8a838"))
+        return QColor(settings.get("color_orange", "#d9773c"))
     if pct > 80:
         return COLOR_RED
     if pct > 50:
@@ -219,6 +226,7 @@ class TooltipWidget(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self._data: dict | None = None
+        self._active_mode: int = MODE_SESSION
         self._width = 260
         self._row_h = 22
         self.hide()
@@ -228,7 +236,8 @@ class TooltipWidget(QWidget):
         self._recalc_size()
         self.update()
 
-    def _rows(self) -> list[tuple[str, dict | None]]:
+    def _rows(self) -> list[tuple[str, str, dict | None]]:
+        """Return (label, api_key, value_dict) tuples."""
         if not self._data:
             return []
         rows = []
@@ -243,7 +252,7 @@ class TooltipWidget(QWidget):
         for key, label in mapping:
             val = self._data.get(key)
             if val:
-                rows.append((label, val))
+                rows.append((label, key, val))
         return rows
 
     def _recalc_size(self):
@@ -259,7 +268,7 @@ class TooltipWidget(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
 
         # Background rounded rect
-        bg = QColor("#1a1714")
+        bg = QColor(self.settings.get("color_bg", DEFAULT_SETTINGS["color_bg"]))
         bg.setAlpha(240)
         p.setBrush(bg)
         p.setPen(Qt.NoPen)
@@ -306,20 +315,32 @@ class TooltipWidget(QWidget):
 
         # Usage bars
         rows = self._rows()
+        active_key = MODE_KEYS[self._active_mode]
         bar_w = self._width - 2 * x_pad
-        for label, val in rows:
+        for label, api_key, val in rows:
+            is_active = api_key == active_key
             util = val.get("utilization", 0) or 0
             resets = val.get("resets_at", "")
 
+            # Highlight background for active row
+            if is_active:
+                hl = QColor(self.settings.get("color_orange", DEFAULT_SETTINGS["color_orange"]))
+                hl.setAlpha(25)
+                p.setPen(Qt.NoPen)
+                p.setBrush(hl)
+                p.drawRoundedRect(x_pad - 6, y - 2, bar_w + 12, self._row_h + 24, 4, 4)
+
             # Label + percentage
-            p.setPen(QColor("#ccc"))
-            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 9))
+            label_color = QColor(self.settings.get("font_color", DEFAULT_SETTINGS["font_color"])) if is_active else QColor("#ccc")
+            p.setPen(label_color)
+            font_weight = QFont.Bold if is_active else QFont.Normal
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 9, font_weight))
             p.drawText(x_pad, y + 13, label)
 
             pct_text = f"{util:.0f}%"
             fm = QFontMetrics(p.font())
             tw = fm.horizontalAdvance(pct_text)
-            p.setPen(color_for_percent(util))
+            p.setPen(color_for_percent(util, self.settings))
             p.drawText(self._width - x_pad - tw, y + 13, pct_text)
             y += 18
 
@@ -332,30 +353,31 @@ class TooltipWidget(QWidget):
             # Bar fill
             fill_w = max(0, min(bar_w, bar_w * util / 100))
             if fill_w > 0:
-                c = color_for_percent(util)
+                c = color_for_percent(util, self.settings)
                 p.setBrush(c)
                 p.drawRoundedRect(x_pad, y, int(fill_w), bar_h, 3, 3)
 
             # Reset time
             if resets:
                 try:
-                    reset_dt = datetime.fromisoformat(resets)
-                    now = datetime.now(timezone.utc)
-                    delta = reset_dt - now
-                    total_sec = max(0, int(delta.total_seconds()))
-                    hours = total_sec // 3600
-                    mins = (total_sec % 3600) // 60
-                    
                     display_mode = self.settings.get("current_session_display") if "session" in label.lower() else self.settings.get("weekly_session_display")
 
-                    if display_mode == "Date":
-                        reset_str = f"resets on {reset_dt.strftime('%b %d')}"
-                    else: # Time Until
-                        reset_str = f"resets in {hours}h {mins}m" if hours else f"resets in {mins}m"
+                    if display_mode != "None":
+                        reset_dt = datetime.fromisoformat(resets)
+                        now = datetime.now(timezone.utc)
+                        delta = reset_dt - now
+                        total_sec = max(0, int(delta.total_seconds()))
+                        hours = total_sec // 3600
+                        mins = (total_sec % 3600) // 60
 
-                    p.setPen(QColor("#666"))
-                    p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 7))
-                    p.drawText(x_pad, y + bar_h + 10, reset_str)
+                        if display_mode == "Date":
+                            reset_str = f"resets on {reset_dt.strftime('%b %d')}"
+                        else:  # Time Until
+                            reset_str = f"resets in {hours}h {mins}m" if hours else f"resets in {mins}m"
+
+                        p.setPen(QColor("#666"))
+                        p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 7))
+                        p.drawText(x_pad, y + bar_h + 10, reset_str)
                 except Exception:
                     pass
 
@@ -445,18 +467,7 @@ class MeterWidget(QWidget):
         QTimer.singleShot(500, self.fetch_usage)
 
     def load_settings(self):
-        if not SETTINGS_PATH.exists():
-            self.settings = DEFAULT_SETTINGS
-            return
-        with open(SETTINGS_PATH, "r") as f:
-            try:
-                self.settings = json.load(f)
-                # Ensure all keys are present
-                for key, value in DEFAULT_SETTINGS.items():
-                    if key not in self.settings:
-                        self.settings[key] = value
-            except json.JSONDecodeError:
-                self.settings = DEFAULT_SETTINGS
+        self.settings = SettingsDialog.load_settings()
 
     def apply_settings(self):
         radius = self.settings.get("radius", 10)
@@ -464,6 +475,8 @@ class MeterWidget(QWidget):
         self.setFixedSize(size, size)
         if self._tooltip:
             self._tooltip.settings = self.settings
+            self._tooltip._active_mode = self._mode
+            self._tooltip.update()
         self.update()
 
     # -- helpers --------------------------------------------------------------
@@ -487,6 +500,11 @@ class MeterWidget(QWidget):
         if not resets_iso:
             return ""
         try:
+            display_mode = self.settings.get("current_session_display") if self._mode == MODE_SESSION else self.settings.get("weekly_session_display")
+
+            if display_mode == "None":
+                return ""
+
             reset_dt = datetime.fromisoformat(resets_iso)
             now = datetime.now(timezone.utc)
             delta = reset_dt - now
@@ -494,12 +512,10 @@ class MeterWidget(QWidget):
             days = total_sec // 86400
             hours = (total_sec % 86400) // 3600
             mins = (total_sec % 3600) // 60
-            
-            display_mode = self.settings.get("current_session_display") if self._mode == MODE_SESSION else self.settings.get("weekly_session_display")
 
             if display_mode == "Date":
                 return f"{reset_dt.strftime('%b %d')}"
-            else: # Time Until
+            else:  # Time Until
                 if days:
                     return f"{days}d {hours}h"
                 if hours:
@@ -552,21 +568,23 @@ class MeterWidget(QWidget):
         p.drawEllipse(QPoint(cx, cy + 2), radius + 4, radius + 4)
 
         # Background circle
-        p.setBrush(COLOR_BG)
+        p.setBrush(QColor(self.settings.get("color_bg", DEFAULT_SETTINGS["color_bg"])))
         p.setPen(Qt.NoPen)
         p.drawEllipse(QPoint(cx, cy), radius, radius)
 
         # Track ring
         ring_r = radius - 5
         ring_rect = QRect(cx - ring_r, cy - ring_r, ring_r * 2, ring_r * 2)
-        track_pen = QPen(QColor(217, 119, 60, 30), 5)
+        track_color = QColor(self.settings.get("color_orange", DEFAULT_SETTINGS["color_orange"]))
+        track_color.setAlpha(30)
+        track_pen = QPen(track_color, 5)
         track_pen.setCapStyle(Qt.RoundCap)
         p.setPen(track_pen)
         p.setBrush(Qt.NoBrush)
         p.drawArc(ring_rect, 0, 360 * 16)
 
         # Progress arc
-        arc_color = color_for_percent(pct) if pct > 0 else QColor(self.settings.get("font_color", DEFAULT_SETTINGS["font_color"]))
+        arc_color = color_for_percent(pct, self.settings) if pct > 0 else QColor(self.settings.get("font_color", DEFAULT_SETTINGS["font_color"]))
         if pct > 0:
             arc_pen = QPen(arc_color, 5)
             arc_pen.setCapStyle(Qt.RoundCap)
@@ -582,28 +600,61 @@ class MeterWidget(QWidget):
         p.drawEllipse(QPoint(cx, cy - ring_r), dot_r, dot_r)
 
         # --- Center: percentage number (shifted up to make room for reset line) ---
+        show_number = self.settings.get("show_number", True)
         p.setPen(arc_color)
         if self._data:
-            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("font_size", DEFAULT_SETTINGS["font_size"]), QFont.Bold))
-            p.drawText(QRect(0, 0, circle_size, cy + 2),
-                       Qt.AlignHCenter | Qt.AlignBottom,
-                       f"{int(pct)}")
+            if show_number:
+                p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("font_size", DEFAULT_SETTINGS["font_size"]), QFont.Bold))
+                p.drawText(QRect(0, 0, circle_size, cy + 2),
+                           Qt.AlignHCenter | Qt.AlignBottom,
+                           f"{int(pct)}")
         else:
-            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("font_size", DEFAULT_SETTINGS["font_size"]) - 2, QFont.Bold))
-            p.drawText(self.rect(), Qt.AlignCenter, "...")
+            if show_number:
+                p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("font_size", DEFAULT_SETTINGS["font_size"]) - 2, QFont.Bold))
+                p.drawText(self.rect(), Qt.AlignCenter, "...")
             p.end()
             return
 
-        # --- Bottom line: reset countdown + mode label ---
-        reset_str = self._format_reset(self._active_resets_at())
-        mode_label = MODE_LABELS[self._mode]
-        bottom_text = f"{reset_str}  {mode_label}" if reset_str else mode_label
+        # --- Bottom line: reset countdown ---
+        if show_number:
+            reset_str = self._format_reset(self._active_resets_at())
+            if reset_str:
+                p.setPen(QColor(200, 200, 200, 140))
+                p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("font_size", DEFAULT_SETTINGS["font_size"]) - 5))
+                p.drawText(QRect(0, cy + 4, circle_size, 16),
+                           Qt.AlignHCenter | Qt.AlignTop,
+                           reset_str)
 
-        p.setPen(QColor(200, 200, 200, 140))
-        p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("font_size", DEFAULT_SETTINGS["font_size"]) - 5))
-        p.drawText(QRect(0, cy + 4, circle_size, 16),
-                   Qt.AlignHCenter | Qt.AlignTop,
-                   bottom_text)
+        # --- Mode badge (top-left) ---
+        if self.settings.get("show_badge", True):
+            mode_label = MODE_LABELS[self._mode]
+            badge_font = QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 7, QFont.Bold)
+            fm = QFontMetrics(badge_font)
+            text_w = fm.horizontalAdvance(mode_label)
+            badge_w = text_w + 6
+            badge_h = fm.height() + 2
+            badge_x = cx - radius + 1
+            badge_y = cy - radius + 1
+
+            # Badge background
+            badge_bg = QColor(self.settings.get("color_bg", DEFAULT_SETTINGS["color_bg"]))
+            badge_bg.setAlpha(220)
+            p.setPen(Qt.NoPen)
+            p.setBrush(badge_bg)
+            p.drawRoundedRect(badge_x, badge_y, badge_w, badge_h, 3, 3)
+
+            # Badge border
+            badge_border = QColor(arc_color)
+            badge_border.setAlpha(120)
+            p.setPen(QPen(badge_border, 1))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(badge_x, badge_y, badge_w, badge_h, 3, 3)
+
+            # Badge text
+            p.setPen(arc_color)
+            p.setFont(badge_font)
+            p.drawText(QRect(badge_x, badge_y, badge_w, badge_h),
+                       Qt.AlignCenter, mode_label)
 
         p.end()
 
@@ -630,6 +681,8 @@ class MeterWidget(QWidget):
             else:
                 # Pure click — toggle mode
                 self._mode = (self._mode + 1) % len(MODE_KEYS)
+                self._tooltip._active_mode = self._mode
+                self._tooltip.update()
                 self.update()
 
     def _snap_to_edge(self):
@@ -742,11 +795,18 @@ class MeterWidget(QWidget):
         elif action == quit_action:
             QApplication.quit()
 
+    def _on_settings_changed(self, new_settings: dict):
+        """Live-update the indicator whenever a setting changes in the dialog."""
+        self.settings = deepcopy(new_settings)
+        self.apply_settings()
+
     def show_settings(self):
-        dialog = SettingsDialog(self)
-        if dialog.exec():
-            self.load_settings()
-            self.apply_settings()
+        dialog = SettingsDialog(self.settings, self)
+        dialog.settings_changed.connect(self._on_settings_changed)
+        dialog.exec()
+        # After dialog closes, reload whatever was saved (or reverted)
+        self.load_settings()
+        self.apply_settings()
 
 
 
