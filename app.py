@@ -409,17 +409,20 @@ class MeterWidget(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
 
         self.settings = {}
+        self._data: dict | None = None
+        self._mode = MODE_SESSION
+        self._dragging = False
+        self._drag_started = False
+        self._drag_offset = QPoint()
+        self._tooltip: TooltipWidget | None = None
+
         self.load_settings()
+        
+        self._tooltip = TooltipWidget(settings=self.settings)
+
         self.apply_settings()
 
-        self._data: dict | None = None
         self._mode = MODE_SESSION  # which bucket to display
-        self._dragging = False
-        self._drag_started = False  # True once mouse actually moves
-        self._drag_offset = QPoint()
-
-        # Tooltip
-        self._tooltip = TooltipWidget(settings=self.settings)
 
         # Snap animation
         self._snap_anim = QPropertyAnimation(self, b"pos")
