@@ -6,6 +6,20 @@ A native Windows desktop application that displays Claude API usage in a beautif
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![PySide6](https://img.shields.io/badge/PySide6-6.0+-green.svg)
 
+## Screenshots
+
+<p align="center">
+  <img src="pics/small.png" alt="Floating indicator" width="200">
+  <br>
+  <em>Floating circular usage indicator</em>
+</p>
+
+<p align="center">
+  <img src="pics/large.png" alt="Usage tooltip" width="350">
+  <br>
+  <em>Detailed usage tooltip on hover</em>
+</p>
+
 ## Features
 
 - **Real-time Usage Tracking**: Monitor your Claude API usage across multiple time windows
