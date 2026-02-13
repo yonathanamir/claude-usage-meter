@@ -12,6 +12,7 @@ A native Windows desktop application that displays Claude API usage in a beautif
 - **Floating Widget**: Unobtrusive circular indicator that stays on top of all windows
 - **Multiple Display Modes**: Toggle between 5-hour session and 7-day usage with a single click
 - **Detailed Tooltip**: Hover to see comprehensive usage breakdown across all models and categories
+- **Customizable Appearance**: Extensive settings dialog to personalize colors, fonts, size, and display options
 - **Smart Positioning**: Drag to move, automatically snaps to screen edges
 - **System Tray Integration**: Minimize to tray with quick access to controls
 - **OAuth Integration**: Seamlessly integrates with Claude Code CLI credentials
@@ -31,9 +32,6 @@ The detailed tooltip displays usage for:
 - **Current session (5h)**: Your immediate usage window
 - **Weekly (all models)**: Total usage across Sonnet, Opus, and Haiku
 - **Weekly (Sonnet)**: Claude Sonnet-specific usage
-- **Weekly (Opus)**: Claude Opus-specific usage
-- **Weekly (OAuth apps)**: Usage from OAuth-connected applications
-- **Weekly (Cowork)**: Cowork feature usage
 
 ## Color Indicators
 
@@ -53,7 +51,7 @@ The detailed tooltip displays usage for:
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/claude-usage-meter.git
+git clone https://github.com/YOUR_USERNAME/claude-usage-meter.git
 cd claude-usage-meter
 ```
 
@@ -98,6 +96,29 @@ Credentials are stored in `~/.claude/.credentials.json` and automatically refres
 The application stores its configuration in:
 - **Credentials**: `~/.claude/.credentials.json` (managed by Claude Code CLI)
 - **Widget Position**: `~/.claude/meter-position.json` (automatically saved)
+- **Settings**: `~/.claude/meter-settings.json` (appearance and behavior preferences)
+
+## Customization
+
+Access the Settings dialog via the right-click menu to customize:
+
+### Appearance
+- **Indicator Radius**: Adjust the size of the floating circle (10-50 pixels)
+- **Colors**: Customize all color elements including:
+  - Font color
+  - Background color
+  - Arc colors for different usage levels (0-50%, 50-80%, 80-100%)
+- **Font**: Choose from multiple font families and sizes
+- **Visibility Options**: Toggle percentage numbers and mode badges
+
+### Display Options
+- **Refresh Display**: Configure how reset times are shown:
+  - **Time Until**: Shows countdown (e.g., "2h 14m", "3d 5h")
+  - **Date**: Shows reset date (e.g., "Feb 15")
+  - **None**: Hides reset time information
+- Separate settings for Current Session (5h) and Weekly Session (7d)
+
+All changes are previewed in real-time and can be reverted with the "Restore Defaults" button.
 
 ## Usage
 
@@ -107,6 +128,7 @@ The application stores its configuration in:
 - **Right Click**: Open context menu
   - Refresh: Manually update usage data
   - Log in: Open Claude Code login flow
+  - Settings: Customize appearance and behavior
   - Quit: Exit the application
 - **Drag**: Move the widget (automatically snaps to screen edges)
 - **Hover**: Show detailed usage tooltip
@@ -147,6 +169,7 @@ The application stores its configuration in:
 ```
 claude-usage-meter/
 ├── app.py                    # Main application
+├── settings.py               # Settings dialog and configuration
 ├── build.py                  # PyInstaller build script
 ├── ClaudeUsageMeter.spec    # PyInstaller specification
 ├── icon.ico                 # Application icon
@@ -197,6 +220,15 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 - Inspired by the need for better visibility into API usage
 
 ## Changelog
+
+### v1.1.0 (Current)
+- **Settings Dialog**: Comprehensive customization options
+  - Adjustable indicator size and colors
+  - Font family and size selection
+  - Configurable reset time display formats
+  - Real-time preview of changes
+- **Streamlined Usage Categories**: Focused view with Current Session, Weekly (all models), and Weekly (Sonnet)
+- **Enhanced User Experience**: Toggle visibility options for numbers and badges
 
 ### v1.0.0 (Initial Release)
 - Floating circular usage indicator

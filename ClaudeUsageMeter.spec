@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['C:\\Workspace\\claude-usage-meter\\app.py'],
+    ['c:\\Workspace\\claude-usage-meter\\app.py'],
     pathex=[],
     binaries=[],
     datas=[],
@@ -35,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Workspace\\claude-usage-meter\\icon.ico'],
+    icon=['c:\\Workspace\\claude-usage-meter\\icon.ico'],
 )

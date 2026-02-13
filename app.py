@@ -51,7 +51,6 @@ POSITION_PATH = Path.home() / ".claude" / "meter-position.json"
 API_BASE = "https://api.anthropic.com"
 USAGE_URL = f"{API_BASE}/api/oauth/usage"
 TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
-CLIENT_ID = "YOUR_CLIENT_ID_HERE"
 BETA_HEADER = "oauth-2025-04-20"
 
 POLL_INTERVAL_MS = 5 * 60 * 1000  # 5 minutes
@@ -105,7 +104,6 @@ class UsageFetcher(QObject):
         payload = {
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
-            "client_id": CLIENT_ID,
             "scope": "user:profile user:inference user:sessions:claude_code user:mcp_servers",
         }
         r = requests.post(TOKEN_URL, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
@@ -245,9 +243,6 @@ class TooltipWidget(QWidget):
             ("five_hour", "Current session (5h)"),
             ("seven_day", "Weekly (all models)"),
             ("seven_day_sonnet", "Weekly (Sonnet)"),
-            ("seven_day_opus", "Weekly (Opus)"),
-            ("seven_day_oauth_apps", "Weekly (OAuth apps)"),
-            ("seven_day_cowork", "Weekly (Cowork)"),
         ]
         for key, label in mapping:
             val = self._data.get(key)
