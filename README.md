@@ -1,10 +1,11 @@
 # Claude Usage Meter
 
-A native Windows desktop application that displays Claude API usage in a beautiful floating overlay widget.
+A cross-platform desktop application that displays Claude API usage in a beautiful floating overlay widget.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![PySide6](https://img.shields.io/badge/PySide6-6.0+-green.svg)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
 
 ## Screenshots
 
@@ -58,7 +59,7 @@ The detailed tooltip displays usage for:
 ### Prerequisites
 
 - Python 3.10 or higher
-- Windows 10/11
+- Windows 10/11, macOS 10.14+, or Linux (Ubuntu 20.04+, Fedora, etc.)
 - [Claude Code CLI](https://claude.com/code) installed and configured
 
 ### From Source
@@ -81,7 +82,7 @@ python app.py
 
 ### Building Executable
 
-To build a standalone executable:
+To build a standalone executable for your platform:
 
 1. Install PyInstaller:
 ```bash
@@ -93,7 +94,28 @@ pip install pyinstaller
 python build.py
 ```
 
-The executable will be created in the `dist/` directory.
+The executable will be created in the `dist/` directory:
+- **Windows**: `dist/ClaudeUsageMeter.exe`
+- **macOS**: `dist/ClaudeUsageMeter.app`
+- **Linux**: `dist/ClaudeUsageMeter`
+
+#### Platform-Specific Notes
+
+**macOS**:
+- The app bundle can be moved to `/Applications` for easy access
+- You may need to allow the app in System Preferences → Security & Privacy on first run
+- On macOS, `iconutil` is used to generate the `.icns` icon
+
+**Linux**:
+- Make the binary executable: `chmod +x dist/ClaudeUsageMeter`
+- Some distributions may require additional Qt dependencies:
+  ```bash
+  # Ubuntu/Debian
+  sudo apt-get install libxcb-xinerama0 libxcb-cursor0
+
+  # Fedora
+  sudo dnf install qt6-qtbase-gui
+  ```
 
 ## Authentication
 
@@ -196,11 +218,23 @@ claude-usage-meter/
 # Install development dependencies
 pip install pyinstaller
 
-# Run the build script
+# Run the build script (automatically detects your platform)
 python build.py
 
-# The executable will be in dist/ClaudeUsageMeter.exe
+# The executable will be in dist/
+# - Windows: ClaudeUsageMeter.exe
+# - macOS:   ClaudeUsageMeter.app
+# - Linux:   ClaudeUsageMeter
 ```
+
+### Cross-Platform Icon Generation
+
+The build script automatically generates platform-appropriate icons:
+- **Windows**: `.ico` file with multiple sizes (16x16 to 256x256)
+- **macOS**: `.icns` file using `iconutil` (falls back to PNG if unavailable)
+- **Linux**: High-resolution `.png` file (256x256)
+
+Icons are generated programmatically using Qt, ensuring consistency across platforms.
 
 ## Troubleshooting
 

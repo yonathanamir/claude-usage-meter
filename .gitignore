@@ -45,3 +45,11 @@ meter-position.json
 # Build artifacts
 *.exe
 *.msi
+*.app
+*.dmg
+*.deb
+*.rpm
+
+# Generated icons (icon.ico is checked in, but generated ones are ignored)
+icon.icns
+icon.png
