@@ -9,17 +9,20 @@ A cross-platform desktop application that displays Claude API usage in a beautif
 
 ## Screenshots
 
-<p align="center">
-  <img src="pics/small.png" alt="Floating indicator" width="200">
-  <br>
-  <em>Floating circular usage indicator</em>
-</p>
-
-<p align="center">
-  <img src="pics/large.png" alt="Usage tooltip" width="350">
-  <br>
-  <em>Detailed usage tooltip on hover</em>
-</p>
+<table align="center">
+  <tr>
+    <td align="center">
+      <img src="pics/small.png" alt="Floating indicator" width="200">
+      <br>
+      <em>Floating circular usage indicator</em>
+    </td>
+    <td align="center">
+      <img src="pics/large.png" alt="Usage tooltip" width="350">
+      <br>
+      <em>Detailed usage tooltip on hover</em>
+    </td>
+  </tr>
+</table>
 
 ## Features
 
