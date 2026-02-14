@@ -11,12 +11,12 @@ A cross-platform desktop application that displays Claude API usage in a beautif
 
 <table align="center" style="border: none;">
   <tr>
-    <td align="center" valign="bottom" style="border: none;">
+    <td align="center" valign="middle" style="border: none;">
       <img src="pics/small.png" alt="Floating indicator" width="200">
       <br>
       <em>Floating circular usage indicator</em>
     </td>
-    <td align="center" valign="bottom" style="border: none;">
+    <td align="center" valign="middle" style="border: none;">
       <img src="pics/large.png" alt="Usage tooltip" width="350">
       <br>
       <em>Detailed usage tooltip on hover</em>
