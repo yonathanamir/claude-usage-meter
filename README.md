@@ -39,28 +39,6 @@ A cross-platform desktop application that displays Claude API usage in a beautif
 - **System Tray Integration**: Minimize to tray with quick access to controls
 - **OAuth Integration**: Seamlessly integrates with Claude Code CLI credentials
 
-## Display Modes
-
-The floating indicator shows different usage windows:
-
-- **5h** (Session): Current rolling 5-hour usage window
-- **7d** (Weekly): Rolling 7-day usage across all models
-
-Left-click the circle to toggle between modes.
-
-## Usage Categories
-
-The detailed tooltip displays usage for:
-- **Current session (5h)**: Your immediate usage window
-- **Weekly (all models)**: Total usage across Sonnet, Opus, and Haiku
-- **Weekly (Sonnet)**: Claude Sonnet-specific usage
-
-## Color Indicators
-
-- **Orange** (0-50%): Normal usage levels
-- **Amber** (50-80%): Moderate usage
-- **Red** (80-100%): High usage, approaching limits
-
 ## Installation
 
 ### Prerequisites
@@ -123,6 +101,28 @@ The executable will be created in the `dist/` directory:
   # Fedora
   sudo dnf install qt6-qtbase-gui
   ```
+
+## Display Modes
+
+The floating indicator shows different usage windows:
+
+- **5h** (Session): Current rolling 5-hour usage window
+- **7d** (Weekly): Rolling 7-day usage across all models
+
+Left-click the circle to toggle between modes.
+
+## Usage Categories
+
+The detailed tooltip displays usage for:
+- **Current session (5h)**: Your immediate usage window
+- **Weekly (all models)**: Total usage across Sonnet, Opus, and Haiku
+- **Weekly (Sonnet)**: Claude Sonnet-specific usage
+
+## Color Indicators
+
+- **Orange** (0-50%): Normal usage levels
+- **Amber** (50-80%): Moderate usage
+- **Red** (80-100%): High usage, approaching limits
 
 ## Authentication
 
