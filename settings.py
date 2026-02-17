@@ -4,6 +4,8 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
+
+from tray import make_tray_icon
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -49,6 +51,7 @@ class SettingsDialog(QDialog):
     def __init__(self, current_settings: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
+        self.setWindowIcon(make_tray_icon())
         self.setMinimumWidth(340)
 
         # Snapshot so Cancel can restore
