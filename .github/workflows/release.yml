@@ -1,0 +1,57 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: ClaudeUsageMeter-Win.exe
+            path: dist/ClaudeUsageMeter.exe
+          - os: macos-latest
+            artifact_name: ClaudeUsageMeter-Mac.app.zip
+            path: dist/ClaudeUsageMeter-Mac.app.zip
+          - os: ubuntu-latest
+            artifact_name: ClaudeUsageMeter-Linux
+            path: dist/ClaudeUsageMeter
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install PySide6 requests pyinstaller
+
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xinput0 libxcb-xfixes0
+
+      - name: Run Build Script
+        run: python build.py
+
+      - name: Zip macOS App
+        if: runner.os == 'macOS'
+        run: cd dist && zip -r ClaudeUsageMeter-Mac.app.zip ClaudeUsageMeter.app
+
+      - name: Upload Binaries to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
