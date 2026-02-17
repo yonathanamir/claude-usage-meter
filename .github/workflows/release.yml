@@ -46,6 +46,8 @@ jobs:
 
       - name: Run Build Script
         run: python build.py
+        env:
+          QT_QPA_PLATFORM: offscreen
 
       - name: Zip macOS App
         if: runner.os == 'macOS'
