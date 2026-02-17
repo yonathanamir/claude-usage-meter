@@ -34,6 +34,7 @@ DEFAULT_SETTINGS = {
     "color_red": "#e74c3c",
     "current_session_display": "Time Until",
     "weekly_session_display": "Date",
+    "poll_interval_minutes": 5,
 }
 
 
@@ -170,6 +171,20 @@ class SettingsDialog(QDialog):
         refresh_group.setLayout(refresh_lay)
         root.addWidget(refresh_group)
 
+        # --- Polling ---
+        polling_group = QGroupBox("Polling")
+        polling_lay = QFormLayout()
+
+        self._poll_interval = QComboBox()
+        self._poll_interval.addItems(["1", "2", "5", "10", "15", "30"])
+        self._poll_interval.setCurrentText(
+            str(self.settings.get("poll_interval_minutes", DEFAULT_SETTINGS["poll_interval_minutes"]))
+        )
+        polling_lay.addRow("Interval (minutes):", self._poll_interval)
+
+        polling_group.setLayout(polling_lay)
+        root.addWidget(polling_group)
+
         # --- Buttons ---
         btn_lay = QHBoxLayout()
         self._restore_btn = QPushButton("Restore Defaults")
@@ -195,6 +210,7 @@ class SettingsDialog(QDialog):
         self._show_badge.stateChanged.connect(lambda _: self._emit_live())
         self._current_session.currentTextChanged.connect(lambda _: self._emit_live())
         self._weekly_session.currentTextChanged.connect(lambda _: self._emit_live())
+        self._poll_interval.currentTextChanged.connect(lambda _: self._emit_live())
 
     def _collect(self) -> dict:
         """Read all widget values into a settings dict."""
@@ -206,6 +222,7 @@ class SettingsDialog(QDialog):
         s["show_badge"] = self._show_badge.isChecked()
         s["current_session_display"] = self._current_session.currentText()
         s["weekly_session_display"] = self._weekly_session.currentText()
+        s["poll_interval_minutes"] = int(self._poll_interval.currentText())
         # Color keys are updated directly in self.settings via _pick_color
         return s
 
@@ -271,6 +288,10 @@ class SettingsDialog(QDialog):
         self._weekly_session.blockSignals(True)
         self._weekly_session.setCurrentText(defaults["weekly_session_display"])
         self._weekly_session.blockSignals(False)
+
+        self._poll_interval.blockSignals(True)
+        self._poll_interval.setCurrentText(str(defaults["poll_interval_minutes"]))
+        self._poll_interval.blockSignals(False)
 
         for key, btn in self._color_buttons.items():
             hex_val = defaults.get(key, "#FFFFFF")

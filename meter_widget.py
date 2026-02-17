@@ -25,7 +25,6 @@ from PySide6.QtWidgets import QApplication, QMenu, QWidget
 
 from constants import (
     POSITION_PATH,
-    POLL_INTERVAL_MS,
     EDGE_MARGIN,
     MODE_SESSION,
     MODE_KEYS,
@@ -76,7 +75,8 @@ class MeterWidget(QWidget):
         # Periodic poll timer
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.fetch_usage)
-        self._timer.start(POLL_INTERVAL_MS)
+        interval_ms = self.settings.get("poll_interval_minutes", 5) * 60 * 1000
+        self._timer.start(interval_ms)
 
         # Load saved position or default
         self._load_position()
@@ -414,6 +414,10 @@ class MeterWidget(QWidget):
         """Live-update the indicator whenever a setting changes in the dialog."""
         self.settings = deepcopy(new_settings)
         self.apply_settings()
+        # Restart poll timer if interval changed
+        interval_ms = self.settings.get("poll_interval_minutes", 5) * 60 * 1000
+        if self._timer.interval() != interval_ms:
+            self._timer.start(interval_ms)
 
     def show_settings(self):
         dialog = SettingsDialog(self.settings, self)
