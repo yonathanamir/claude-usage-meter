@@ -383,6 +383,8 @@ class MeterWidget(QWidget):
     def contextMenuEvent(self, event):
         menu = QMenu(self)
         menu.setStyleSheet(MENU_STYLESHEET)
+
+        hide_action = menu.addAction("Hide Indicator")
         refresh_action = menu.addAction("Refresh")
         login_action = menu.addAction("Log in")
         settings_action = menu.addAction("Settings")
@@ -390,7 +392,13 @@ class MeterWidget(QWidget):
         quit_action = menu.addAction("Quit")
 
         action = menu.exec(event.globalPos())
-        if action == refresh_action:
+        if action == hide_action:
+            if hasattr(self, "_tray"):
+                self._tray.toggle_indicator()
+            else:
+                self.hide()
+                self._tooltip.hide()
+        elif action == refresh_action:
             self.fetch_usage()
         elif action == login_action:
             try:

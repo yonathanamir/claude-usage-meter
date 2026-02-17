@@ -1,3 +1,5 @@
+import subprocess
+
 from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
@@ -48,6 +50,14 @@ def setup_tray(app, meter) -> QSystemTrayIcon:
     refresh_action.triggered.connect(meter.fetch_usage)
     tray_menu.addAction(refresh_action)
 
+    login_action = QAction("Log in", tray_menu)
+    login_action.triggered.connect(lambda: subprocess.Popen("claude.cmd /login", shell=True))
+    tray_menu.addAction(login_action)
+
+    settings_action = QAction("Settings", tray_menu)
+    settings_action.triggered.connect(meter.show_settings)
+    tray_menu.addAction(settings_action)
+
     tray_menu.addSeparator()
 
     quit_action = QAction("Quit", tray_menu)
@@ -63,5 +73,8 @@ def setup_tray(app, meter) -> QSystemTrayIcon:
 
     tray.activated.connect(_on_tray_activated)
     tray.show()
+
+    tray.toggle_action = toggle_action
+    tray.toggle_indicator = _toggle_indicator
 
     return tray

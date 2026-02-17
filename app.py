@@ -20,7 +20,8 @@ def main():
     meter = MeterWidget()
     meter.show()
 
-    tray = setup_tray(app, meter)  # noqa: F841
+    tray = setup_tray(app, meter)
+    meter._tray = tray
 
     sys.exit(app.exec())
 
