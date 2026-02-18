@@ -21,7 +21,7 @@ from PySide6.QtGui import (
     QPen,
     QRadialGradient,
 )
-from PySide6.QtWidgets import QApplication, QMenu, QWidget
+from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QWidget
 
 from constants import (
     POSITION_PATH,
@@ -388,6 +388,7 @@ class MeterWidget(QWidget):
         refresh_action = menu.addAction("Refresh")
         login_action = menu.addAction("Log in")
         settings_action = menu.addAction("Settings")
+        about_action = menu.addAction("About")
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
 
@@ -407,6 +408,8 @@ class MeterWidget(QWidget):
                 pass
         elif action == settings_action:
             self.show_settings()
+        elif action == about_action:
+            self.show_about()
         elif action == quit_action:
             QApplication.quit()
 
@@ -426,3 +429,20 @@ class MeterWidget(QWidget):
         # After dialog closes, reload whatever was saved (or reverted)
         self.load_settings()
         self.apply_settings()
+
+    def show_about(self):
+        from tray import make_tray_icon
+        msg = QMessageBox()
+        msg.setWindowTitle("About Claude Usage Meter")
+        msg.setWindowIcon(make_tray_icon())
+        msg.setTextFormat(Qt.RichText)
+        msg.setText(
+            "<h3>Claude Usage Meter</h3>"
+            "<p>A desktop widget for monitoring Claude API usage in real-time.</p>"
+            "<p>Created by <b>Yonathan Amir</b><br>"
+            "Built with <b>Claude Code</b></p>"
+            '<p><a href="https://github.com/yonathanamir/claude-usage-meter">'
+            "github.com/yonathanamir/claude-usage-meter</a></p>"
+        )
+        msg.setStyleSheet(MENU_STYLESHEET)
+        msg.exec()

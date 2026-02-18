@@ -7,6 +7,16 @@ A cross-platform desktop application that displays Claude API usage in a beautif
 ![PySide6](https://img.shields.io/badge/PySide6-6.0+-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
 
+## Download
+
+Pre-built executables are available on the [Releases](https://github.com/yonathanamir/claude-usage-meter/releases) page:
+
+| Platform | Artifact |
+|----------|----------|
+| Windows  | `ClaudeUsageMeter-Win.exe` |
+| macOS    | `ClaudeUsageMeter-Mac.app.zip` |
+| Linux    | `ClaudeUsageMeter-Linux` |
+
 ## Screenshots
 
 <table align="center" border="0" cellspacing="0" cellpadding="0" style="border: none; border-collapse: collapse;">
@@ -51,7 +61,7 @@ A cross-platform desktop application that displays Claude API usage in a beautif
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/YOUR_USERNAME/claude-usage-meter.git
+git clone https://github.com/yonathanamir/claude-usage-meter.git
 cd claude-usage-meter
 ```
 
@@ -161,6 +171,9 @@ Access the Settings dialog via the right-click menu to customize:
   - **None**: Hides reset time information
 - Separate settings for Current Session (5h) and Weekly Session (7d)
 
+### Polling
+- **Interval**: Configure how often usage data is refreshed (1, 2, 5, 10, 15, or 30 minutes)
+
 All changes are previewed in real-time and can be reverted with the "Restore Defaults" button.
 
 ## Usage
@@ -172,6 +185,7 @@ All changes are previewed in real-time and can be reverted with the "Restore Def
   - Refresh: Manually update usage data
   - Log in: Open Claude Code login flow
   - Settings: Customize appearance and behavior
+  - About: View credits and project links
   - Quit: Exit the application
 - **Drag**: Move the widget (automatically snaps to screen edges)
 - **Hover**: Show detailed usage tooltip
@@ -182,6 +196,9 @@ All changes are previewed in real-time and can be reverted with the "Restore Def
 - **Right Click Tray Icon**: Access menu
   - Show/Hide Indicator
   - Refresh
+  - Log in
+  - Settings
+  - About
   - Quit
 
 ## Technical Details
@@ -195,7 +212,8 @@ All changes are previewed in real-time and can be reverted with the "Restore Def
 
 ### API Polling
 
-- Usage data is automatically refreshed every 5 minutes
+- Usage data is automatically refreshed at a configurable interval (default: 5 minutes)
+- Polling interval can be set to 1, 2, 5, 10, 15, or 30 minutes via Settings
 - Token refresh handled automatically
 - Failed requests trigger re-authentication flow
 
@@ -211,12 +229,21 @@ All changes are previewed in real-time and can be reverted with the "Restore Def
 
 ```
 claude-usage-meter/
-├── app.py                    # Main application
+├── .github/
+│   └── workflows/
+│       └── release.yml       # CI/CD build & release pipeline
+├── app.py                    # Main application entry point
+├── meter_widget.py           # Floating circular indicator widget
+├── tooltip_widget.py         # Detailed usage tooltip on hover
 ├── settings.py               # Settings dialog and configuration
-├── build.py                  # PyInstaller build script
-├── ClaudeUsageMeter.spec    # PyInstaller specification
-├── icon.ico                 # Application icon
-└── README.md                # This file
+├── tray.py                   # System tray icon and menu
+├── fetcher.py                # OAuth token management and API calls
+├── constants.py              # Colors, paths, and UI constants
+├── build.py                  # Cross-platform PyInstaller build script
+├── ClaudeUsageMeter.spec     # PyInstaller specification
+├── icon.ico                  # Application icon
+├── pics/                     # Screenshots
+└── README.md                 # This file
 ```
 
 ### Building from Source
@@ -270,13 +297,19 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Acknowledgments
 
-- Built for [Claude Code](https://claude.com/code) by Anthropic
+- Created by [Yonathan Amir](https://github.com/yonathanamir)
+- Built with [Claude Code](https://claude.com/code) by Anthropic
 - Uses the Anthropic OAuth API
-- Inspired by the need for better visibility into API usage
 
 ## Changelog
 
-### v1.1.0 (Current)
+### v1.2.0 (Current)
+- **About Dialog**: Credits and GitHub link accessible from both context menus
+- **Configurable Polling Interval**: Set refresh interval from 1 to 30 minutes in Settings
+- **Unified Context Menus**: Consistent menu items across right-click and system tray menus
+- **CI/CD Pipeline**: GitHub Actions workflow to automatically build and release executables for Windows, macOS, and Linux on tag push
+
+### v1.1.0
 - **Settings Dialog**: Comprehensive customization options
   - Adjustable indicator size and colors
   - Font family and size selection
@@ -285,7 +318,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 - **Streamlined Usage Categories**: Focused view with Current Session, Weekly (all models), and Weekly (Sonnet)
 - **Enhanced User Experience**: Toggle visibility options for numbers and badges
 
-### v1.0.0 (Initial Release)
+### v1.0.0
 - Floating circular usage indicator
 - Real-time OAuth integration
 - Multiple display modes (5h, 7d)
@@ -297,5 +330,5 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Support
 
 For issues and questions:
-- Open an issue on GitHub
+- [Open an issue on GitHub](https://github.com/yonathanamir/claude-usage-meter/issues)
 - Check Claude Code documentation: https://claude.com/code

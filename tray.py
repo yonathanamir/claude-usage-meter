@@ -58,6 +58,10 @@ def setup_tray(app, meter) -> QSystemTrayIcon:
     settings_action.triggered.connect(meter.show_settings)
     tray_menu.addAction(settings_action)
 
+    about_action = QAction("About", tray_menu)
+    about_action.triggered.connect(meter.show_about)
+    tray_menu.addAction(about_action)
+
     tray_menu.addSeparator()
 
     quit_action = QAction("Quit", tray_menu)
