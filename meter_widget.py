@@ -31,6 +31,7 @@ from constants import (
     MODE_LABELS,
     MENU_STYLESHEET,
     color_for_percent,
+    login_command,
 )
 from settings import SettingsDialog, DEFAULT_SETTINGS
 from fetcher import UsageFetcher
@@ -328,7 +329,7 @@ class MeterWidget(QWidget):
     def _save_position(self, pos: QPoint):
         try:
             POSITION_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with open(POSITION_PATH, "w") as f:
+            with open(POSITION_PATH, "w", encoding="utf-8") as f:
                 json.dump({"x": pos.x(), "y": pos.y()}, f)
         except Exception:
             pass
@@ -336,7 +337,7 @@ class MeterWidget(QWidget):
     def _load_position(self):
         try:
             if POSITION_PATH.exists():
-                with open(POSITION_PATH, "r") as f:
+                with open(POSITION_PATH, "r", encoding="utf-8") as f:
                     d = json.load(f)
                 self.move(d["x"], d["y"])
                 return
@@ -403,7 +404,7 @@ class MeterWidget(QWidget):
             self.fetch_usage()
         elif action == login_action:
             try:
-                subprocess.Popen("claude.cmd /login", shell=True)
+                subprocess.Popen(login_command(), shell=True)
             except Exception:
                 pass
         elif action == settings_action:

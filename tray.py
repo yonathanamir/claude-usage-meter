@@ -4,7 +4,7 @@ from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from constants import COLOR_ORANGE, MENU_STYLESHEET
+from constants import COLOR_ORANGE, MENU_STYLESHEET, login_command
 
 
 def make_tray_icon() -> QIcon:
@@ -18,7 +18,9 @@ def make_tray_icon() -> QIcon:
     p.setPen(Qt.NoPen)
     p.drawEllipse(4, 4, size - 8, size - 8)
     p.setPen(QColor("#1a1714"))
-    p.setFont(QFont("Segoe UI", 26, QFont.Bold))
+    from constants import IS_MACOS
+    font_family = "Helvetica Neue" if IS_MACOS else "Segoe UI"
+    p.setFont(QFont(font_family, 26, QFont.Bold))
     p.drawText(QRect(0, 0, size, size), Qt.AlignCenter, "C")
     p.end()
     return QIcon(QPixmap.fromImage(img))
@@ -51,7 +53,7 @@ def setup_tray(app, meter) -> QSystemTrayIcon:
     tray_menu.addAction(refresh_action)
 
     login_action = QAction("Log in", tray_menu)
-    login_action.triggered.connect(lambda: subprocess.Popen("claude.cmd /login", shell=True))
+    login_action.triggered.connect(lambda: subprocess.Popen(login_command(), shell=True))
     tray_menu.addAction(login_action)
 
     settings_action = QAction("Settings", tray_menu)

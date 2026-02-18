@@ -1,6 +1,15 @@
+import platform
 from pathlib import Path
 
 from PySide6.QtGui import QColor
+
+# ---------------------------------------------------------------------------
+# Platform detection
+# ---------------------------------------------------------------------------
+
+SYSTEM = platform.system()
+IS_MACOS = SYSTEM == "Darwin"
+IS_WINDOWS = SYSTEM == "Windows"
 
 # ---------------------------------------------------------------------------
 # File paths
@@ -8,6 +17,21 @@ from PySide6.QtGui import QColor
 
 CREDENTIALS_PATH = Path.home() / ".claude" / ".credentials.json"
 POSITION_PATH = Path.home() / ".claude" / "meter-position.json"
+
+# ---------------------------------------------------------------------------
+# macOS Keychain
+# ---------------------------------------------------------------------------
+
+KEYCHAIN_SERVICE = "Claude Code-credentials"
+
+
+def login_command() -> str:
+    """Return the shell command to invoke ``claude /login``."""
+    if IS_WINDOWS:
+        return "claude.cmd /login"
+    import shutil
+    claude = shutil.which("claude") or "claude"
+    return f"{claude} /login"
 
 # ---------------------------------------------------------------------------
 # API configuration

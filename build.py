@@ -52,7 +52,7 @@ def _create_icon_image(size):
     p.setPen(QColor("#1a1714"))
     font_size = max(6, int(size * 0.42))
     # Use a cross-platform font
-    font_family = "Segoe UI" if SYSTEM == "Windows" else "Arial"
+    font_family = {"Windows": "Segoe UI", "Darwin": "Helvetica Neue"}.get(SYSTEM, "Arial")
     p.setFont(QFont(font_family, font_size, QFont.Bold))
     p.drawText(QRect(0, 0, size, size), Qt.AlignCenter, "C")
     p.end()

@@ -20,11 +20,16 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from constants import IS_MACOS, IS_WINDOWS
+
 SETTINGS_PATH = Path.home() / ".claude" / "meter-settings.json"
+
+_DEFAULT_FONT = "Helvetica Neue" if IS_MACOS else "Segoe UI"
+
 DEFAULT_SETTINGS = {
     "radius": 30,
     "font_color": "#FFFFFF",
-    "font_family": "Segoe UI",
+    "font_family": _DEFAULT_FONT,
     "font_size": 12,
     "show_number": True,
     "show_badge": True,
@@ -117,10 +122,16 @@ class SettingsDialog(QDialog):
         font_lay = QFormLayout()
 
         self._font_family = QComboBox()
-        self._font_family.addItems(
-            ["Segoe UI", "Arial", "Courier New", "Georgia", "Times New Roman",
-             "Verdana", "Consolas", "Tahoma"]
-        )
+        if IS_MACOS:
+            fonts = ["Helvetica Neue", "SF Pro", "Menlo", "Arial",
+                     "Georgia", "Courier New", "Times New Roman", "Verdana"]
+        elif IS_WINDOWS:
+            fonts = ["Segoe UI", "Arial", "Courier New", "Georgia",
+                     "Times New Roman", "Verdana", "Consolas", "Tahoma"]
+        else:  # Linux
+            fonts = ["Sans", "DejaVu Sans", "Liberation Sans", "Arial",
+                     "Monospace", "Courier New", "Georgia", "Verdana"]
+        self._font_family.addItems(fonts)
         self._font_family.setCurrentText(
             self.settings.get("font_family", DEFAULT_SETTINGS["font_family"])
         )
@@ -305,14 +316,14 @@ class SettingsDialog(QDialog):
     @staticmethod
     def _save(settings: dict):
         SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(SETTINGS_PATH, "w") as f:
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2)
 
     @staticmethod
     def load_settings() -> dict:
         if not SETTINGS_PATH.exists():
             return deepcopy(DEFAULT_SETTINGS)
-        with open(SETTINGS_PATH, "r") as f:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
             try:
                 settings = json.load(f)
                 for key, value in DEFAULT_SETTINGS.items():
