@@ -212,8 +212,8 @@ def build():
     # Platform-specific options
     if SYSTEM == "Darwin":  # macOS
         cmd.extend([
+            "--target-arch", "universal2",
             "--osx-bundle-identifier", "com.anthropic.claudeusagemeter",
-            # Include Info.plist customizations if needed
         ])
     elif SYSTEM == "Linux":
         # Linux-specific options can go here
