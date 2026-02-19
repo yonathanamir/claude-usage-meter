@@ -21,13 +21,20 @@ class TooltipWidget(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self._data: dict | None = None
+        self._warning: str | None = None
         self._active_mode: int = MODE_SESSION
         self._width = 260
         self._row_h = 22
         self.hide()
 
-    def set_data(self, data: dict | None):
+    def set_data(self, data: dict | None, warning: str | None = None):
         self._data = data
+        self._warning = warning
+        self._recalc_size()
+        self.update()
+
+    def set_warning(self, warning: str | None):
+        self._warning = warning
         self._recalc_size()
         self.update()
 
@@ -52,7 +59,8 @@ class TooltipWidget(QWidget):
         header_h = 46  # plan name + divider
         bar_rows = len(rows) * (self._row_h + 22)  # label + bar
         extra_h = 30  # footer
-        h = header_h + bar_rows + extra_h + 16
+        warning_h = 36 if self._warning else 0
+        h = header_h + bar_rows + extra_h + warning_h + 16
         self.setFixedSize(self._width, max(h, 80))
 
     def paintEvent(self, event):
@@ -187,6 +195,29 @@ class TooltipWidget(QWidget):
             else:
                 p.drawText(x_pad, y + 10, "Extra usage: enabled")
             y += 16
+
+        # Warning section
+        if self._warning:
+            warn_pad = 6
+            warn_h = 24
+            warn_rect_x = x_pad - 2
+            warn_rect_w = self._width - 2 * (x_pad - 2)
+            # Dark translucent background with subtle red tint
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(80, 30, 30, 160))
+            p.drawRoundedRect(warn_rect_x, y, warn_rect_w, warn_h, 4, 4)
+            # Subtle red border
+            p.setPen(QPen(QColor(200, 60, 60, 100), 1))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(warn_rect_x, y, warn_rect_w, warn_h, 4, 4)
+            # Warning text in muted red
+            p.setPen(QColor(230, 120, 100))
+            warn_font = QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 8)
+            p.setFont(warn_font)
+            fm = QFontMetrics(warn_font)
+            elided = fm.elidedText(self._warning, Qt.ElideRight, warn_rect_w - 2 * warn_pad)
+            p.drawText(warn_rect_x + warn_pad, y + warn_h - 8, elided)
+            y += warn_h + 6
 
         # Last updated
         fetched = self._data.get("_fetchedAt", "")

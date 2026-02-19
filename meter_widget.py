@@ -52,6 +52,8 @@ class MeterWidget(QWidget):
         self.settings = {}
         self._data: dict | None = None
         self._mode = MODE_SESSION
+        self._warning: str | None = None  # current warning/error message
+        self._warn_badge_rect: QRect | None = None  # hit-test area for warning badge
         self._dragging = False
         self._drag_started = False
         self._drag_offset = QPoint()
@@ -148,11 +150,33 @@ class MeterWidget(QWidget):
 
     def set_data(self, data: dict):
         self._data = data
-        self._tooltip.set_data(data)
+        self._warning = None  # clear error on successful fetch
+        self._tooltip.set_data(data, warning=None)
         self.update()
 
     def on_fetch_error(self, msg: str):
         print(f"[meter] fetch error: {msg}", file=sys.stderr)
+        self._warning = msg
+        self._tooltip.set_warning(msg)
+        self.update()
+
+    def _check_stale(self) -> str | None:
+        """Return a warning string if data is stale (>2x poll interval)."""
+        if not self._data:
+            return None
+        fetched = self._data.get("_fetchedAt", "")
+        if not fetched:
+            return None
+        try:
+            ft = datetime.fromisoformat(fetched)
+            age_sec = (datetime.now(timezone.utc) - ft).total_seconds()
+            interval_sec = self.settings.get("poll_interval_minutes", 5) * 60
+            if age_sec > 2 * interval_sec:
+                mins = int(age_sec) // 60
+                return f"Data is stale (last updated {mins}m ago)"
+        except Exception:
+            pass
+        return None
 
     def fetch_usage(self):
         if self._thread and self._thread.isRunning():
@@ -290,6 +314,38 @@ class MeterWidget(QWidget):
             p.drawText(QRect(badge_x, badge_y, badge_w, badge_h),
                        Qt.AlignCenter, mode_label)
 
+        # --- Warning badge (bottom-left, styled like mode badge) ---
+        active_warning = self._warning or self._check_stale()
+        if active_warning:
+            warn_label = "!"
+            warn_font = QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 7, QFont.Bold)
+            wfm = QFontMetrics(warn_font)
+            wb_w = wfm.horizontalAdvance(warn_label) + 6
+            wb_h = wfm.height() + 2
+            wb_x = cx - radius + 1
+            wb_y = cy + radius - wb_h - 1
+
+            # Badge background (red)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor("#e74c3c"))
+            p.drawRoundedRect(wb_x, wb_y, wb_w, wb_h, 3, 3)
+
+            # Badge border
+            warn_border = QColor(255, 255, 255, 120)
+            p.setPen(QPen(warn_border, 1))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(wb_x, wb_y, wb_w, wb_h, 3, 3)
+
+            # Badge text (white)
+            p.setPen(QColor("white"))
+            p.setFont(warn_font)
+            p.drawText(QRect(wb_x, wb_y, wb_w, wb_h),
+                       Qt.AlignCenter, warn_label)
+
+            self._warn_badge_rect = QRect(wb_x, wb_y, wb_w, wb_h)
+        else:
+            self._warn_badge_rect = None
+
         p.end()
 
     # -- Drag & Click ---------------------------------------------------------
@@ -312,6 +368,12 @@ class MeterWidget(QWidget):
             self._drag_started = False
             if was_drag:
                 self._snap_to_edge()
+            elif (self._warn_badge_rect
+                  and self._warn_badge_rect.contains(event.position().toPoint())):
+                # Click on warning badge — show error detail window
+                active_warning = self._warning or self._check_stale()
+                if active_warning:
+                    self._show_error_window(active_warning)
             else:
                 # Pure click — toggle mode
                 self._mode = (self._mode + 1) % len(MODE_KEYS)
@@ -375,6 +437,10 @@ class MeterWidget(QWidget):
         self._tooltip.hide()
 
     def _show_tooltip(self):
+        # Update warning state (stale check is dynamic)
+        active_warning = self._warning or self._check_stale()
+        self._tooltip.set_warning(active_warning)
+
         screen = QApplication.primaryScreen().availableGeometry()
         pos = self.pos()
         radius = self.settings.get("radius", 10)
@@ -516,6 +582,43 @@ class MeterWidget(QWidget):
             api_status_html = '<b>API Status:</b> <span style="color:#888">unknown</span>'
 
         return session_html, api_status_html
+
+    def _show_error_window(self, message: str):
+        """Show a dialog with the full warning/error text and a Copy button."""
+        from tray import make_tray_icon
+        from PySide6.QtWidgets import QTextEdit
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Warning Details")
+        dlg.setWindowIcon(make_tray_icon())
+        dlg.setMinimumSize(400, 200)
+        dlg.setStyleSheet(MENU_STYLESHEET + """
+            QDialog { background-color: #1a1714; }
+            QTextEdit {
+                background-color: #2a2520;
+                color: #ccc;
+                border: 1px solid #333;
+                padding: 8px;
+                font-size: 12px;
+            }
+            QPushButton {
+                background-color: #d9773c;
+                color: white;
+                border: none;
+                padding: 6px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #e8a838; }
+        """)
+        layout = QVBoxLayout(dlg)
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setPlainText(message)
+        layout.addWidget(text_edit)
+        copy_btn = QPushButton("Copy to Clipboard")
+        copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(message))
+        layout.addWidget(copy_btn)
+        dlg.exec()
 
     def show_about(self):
         from tray import make_tray_icon
