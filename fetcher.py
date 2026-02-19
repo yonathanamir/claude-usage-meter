@@ -7,7 +7,7 @@ import requests
 from PySide6.QtCore import QObject, Signal
 
 from constants import (
-    CREDENTIALS_PATH, USAGE_URL, TOKEN_URL, BETA_HEADER,
+    CREDENTIALS_PATH, USAGE_URL, PROFILE_URL, TOKEN_URL, BETA_HEADER,
     IS_MACOS, KEYCHAIN_SERVICE, login_command,
 )
 
@@ -180,6 +180,66 @@ class UsageFetcher(QObject):
     def _fetch(self, token: str):
         r = requests.get(USAGE_URL, headers=self._build_headers(token), timeout=10)
         return r
+
+    def fetch_profile(self):
+        """Fetch the user's profile and connection diagnostics.
+
+        Returns a dict with 'profile' (API response or None) and
+        'diagnostics' (credential/connection metadata), or None if
+        no credentials exist at all.
+        """
+        result = {"profile": None, "diagnostics": {}}
+        diag = result["diagnostics"]
+
+        # Credential source
+        full = self._read_full_credentials()
+        if full is None:
+            if IS_MACOS:
+                diag["credential_source"] = "Not found (file / Keychain)"
+            else:
+                diag["credential_source"] = "Not found"
+            return result
+
+        diag["credential_source"] = "File"
+        if IS_MACOS and not CREDENTIALS_PATH.exists():
+            diag["credential_source"] = "macOS Keychain"
+
+        creds = full.get("claudeAiOauth", {})
+        token = creds.get("accessToken")
+
+        # Token expiry
+        expires_at = creds.get("expiresAt", 0)
+        if expires_at:
+            try:
+                exp_dt = datetime.fromtimestamp(expires_at / 1000, tz=timezone.utc)
+                now = datetime.now(timezone.utc)
+                diag["token_expires"] = exp_dt.strftime("%Y-%m-%d %H:%M UTC")
+                diag["token_expired"] = expires_at < time.time() * 1000
+            except Exception:
+                pass
+
+        # API endpoint
+        diag["api_base"] = PROFILE_URL.rsplit("/api/", 1)[0]
+
+        if not token:
+            return result
+
+        # Fetch profile from API
+        try:
+            r = requests.get(PROFILE_URL, headers=self._build_headers(token), timeout=10)
+            diag["api_status"] = r.status_code
+            if r.status_code == 200:
+                result["profile"] = r.json()
+            else:
+                diag["api_error"] = r.text[:200]
+        except requests.ConnectionError:
+            diag["api_status"] = "Connection failed"
+        except requests.Timeout:
+            diag["api_status"] = "Timeout"
+        except Exception as exc:
+            diag["api_status"] = f"Error: {exc}"
+
+        return result
 
     # ------------------------------------------------------------------
     # Main entry point

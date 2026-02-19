@@ -39,6 +39,7 @@ def login_command() -> str:
 
 API_BASE = "https://api.anthropic.com"
 USAGE_URL = f"{API_BASE}/api/oauth/usage"
+PROFILE_URL = f"{API_BASE}/api/oauth/profile"
 TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 BETA_HEADER = "oauth-2025-04-20"
 

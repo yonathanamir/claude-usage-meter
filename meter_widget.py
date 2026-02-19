@@ -20,7 +20,10 @@ from PySide6.QtGui import (
     QPen,
     QRadialGradient,
 )
-from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QWidget
+from PySide6.QtWidgets import (
+    QApplication, QDialog, QHBoxLayout, QLabel, QMenu, QMessageBox,
+    QPushButton, QVBoxLayout, QWidget,
+)
 
 from constants import (
     POSITION_PATH,
@@ -440,19 +443,154 @@ class MeterWidget(QWidget):
         self.load_settings()
         self.apply_settings()
 
+    # -- About dialog helpers -------------------------------------------------
+
+    @staticmethod
+    def _build_session_html(result: dict | None) -> tuple[str, str]:
+        """Return (session_html, api_status_html) from a fetch_profile result."""
+        if not result:
+            return "", ""
+        profile = result.get("profile")
+        diag = result.get("diagnostics", {})
+
+        session_html = ""
+
+        # --- Account / Session section ---
+        acct_rows: list[str] = []
+        if profile:
+            acct = profile.get("account", {})
+            org = profile.get("organization", {})
+            name = acct.get("display_name") or acct.get("full_name") or ""
+            email = acct.get("email", "")
+            org_type = org.get("organization_type", "")
+            plan = {"claude_pro": "Pro", "claude_max": "Max", "claude_team": "Team",
+                    "claude_enterprise": "Enterprise"}.get(org_type, org_type.replace("_", " ").title())
+            tier = org.get("rate_limit_tier", "")
+            if tier:
+                tier = tier.replace("default_", "").replace("_", " ").title()
+            sub_status = org.get("subscription_status", "")
+
+            if name:
+                acct_rows.append(f"<b>Account:</b> {name}")
+            if email:
+                acct_rows.append(f"<b>Email:</b> {email}")
+            if plan:
+                acct_rows.append(f"<b>Plan:</b> {plan}")
+            if tier:
+                acct_rows.append(f"<b>Rate Limit:</b> {tier}")
+            if sub_status:
+                acct_rows.append(f"<b>Status:</b> {sub_status.replace('_', ' ').title()}")
+
+        if acct_rows:
+            session_html += (
+                '<hr><p style="margin-bottom:2px"><b>Current Session</b></p>'
+                "<p>" + "<br>".join(acct_rows) + "</p>"
+            )
+
+        # --- Connection / Diagnostics (without API Status) ---
+        diag_rows: list[str] = []
+        api_base = diag.get("api_base", "")
+        if api_base:
+            diag_rows.append(f"<b>API Endpoint:</b> {api_base}")
+        cred_src = diag.get("credential_source", "")
+        if cred_src:
+            diag_rows.append(f"<b>Credentials:</b> {cred_src}")
+        token_exp = diag.get("token_expires", "")
+        if token_exp:
+            expired_tag = ' <span style="color:#e74c3c">(expired)</span>' if diag.get("token_expired") else ""
+            diag_rows.append(f"<b>Token Expires:</b> {token_exp}{expired_tag}")
+
+        if diag_rows:
+            session_html += (
+                '<hr><p style="margin-bottom:2px"><b>Connection</b></p>'
+                "<p>" + "<br>".join(diag_rows) + "</p>"
+            )
+
+        # --- API Status (rendered separately so refresh button can update it) ---
+        api_status = diag.get("api_status", "")
+        if api_status == 200:
+            api_status_html = '<b>API Status:</b> <span style="color:#27ae60">200 OK</span>'
+        elif api_status:
+            api_status_html = f'<b>API Status:</b> <span style="color:#e74c3c">{api_status}</span>'
+        else:
+            api_status_html = '<b>API Status:</b> <span style="color:#888">unknown</span>'
+
+        return session_html, api_status_html
+
     def show_about(self):
         from tray import make_tray_icon
-        msg = QMessageBox()
-        msg.setWindowTitle("About Claude Usage Meter")
-        msg.setWindowIcon(make_tray_icon())
-        msg.setTextFormat(Qt.RichText)
-        msg.setText(
+
+        fetcher = UsageFetcher()
+        result = fetcher.fetch_profile()
+        session_html, api_status_html = self._build_session_html(result)
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("About Claude Usage Meter")
+        dlg.setWindowIcon(make_tray_icon())
+        dlg.setStyleSheet(
+            MENU_STYLESHEET
+            + "QDialog { background-color: #1a1714; color: #ddd; }"
+              "QLabel { color: #ddd; }"
+              "QPushButton { background: #333; color: #ddd; border: 1px solid #555;"
+              "  border-radius: 3px; padding: 1px 6px; }"
+              "QPushButton:hover { background: #d9773c; color: white; }"
+              "QPushButton#refresh { font-size: 10px; padding: 0px; margin: 0px;"
+              "  border: none; background: transparent; color: #999; }"
+              "QPushButton#refresh:hover { color: #d9773c; }"
+        )
+
+        layout = QVBoxLayout(dlg)
+
+        # Main about content
+        about_label = QLabel(
             "<h3>Claude Usage Meter</h3>"
             "<p>A desktop widget for monitoring Claude API usage in real-time.</p>"
             "<p>Created by <b>Yonathan Amir</b><br>"
             "Built with <b>Claude Code</b></p>"
             '<p><a href="https://github.com/yonathanamir/claude-usage-meter">'
             "github.com/yonathanamir/claude-usage-meter</a></p>"
+            + session_html
         )
-        msg.setStyleSheet(MENU_STYLESHEET)
-        msg.exec()
+        about_label.setTextFormat(Qt.RichText)
+        about_label.setOpenExternalLinks(True)
+        about_label.setWordWrap(True)
+        layout.addWidget(about_label)
+
+        # API Status row with refresh button
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.setSpacing(4)
+        status_label = QLabel(api_status_html)
+        status_label.setTextFormat(Qt.RichText)
+        status_row.addWidget(status_label)
+
+        refresh_btn = QPushButton("\u21bb")
+        refresh_btn.setObjectName("refresh")
+        refresh_btn.setCursor(Qt.PointingHandCursor)
+        refresh_btn.setToolTip("Refresh API status")
+
+        def on_refresh():
+            refresh_btn.setEnabled(False)
+            refresh_btn.setText("\u22ef")
+            QApplication.processEvents()
+            new_result = fetcher.fetch_profile()
+            _, new_api_html = self._build_session_html(new_result)
+            status_label.setText(new_api_html)
+            refresh_btn.setText("\u21bb")
+            refresh_btn.setEnabled(True)
+
+        refresh_btn.clicked.connect(on_refresh)
+        status_row.addWidget(refresh_btn)
+        status_row.addStretch()
+        layout.addLayout(status_row)
+
+        # OK button
+        ok_btn = QPushButton("OK")
+        ok_btn.setFixedHeight(28)
+        ok_btn.clicked.connect(dlg.accept)
+        ok_layout = QHBoxLayout()
+        ok_layout.addStretch()
+        ok_layout.addWidget(ok_btn)
+        layout.addLayout(ok_layout)
+
+        dlg.exec()
