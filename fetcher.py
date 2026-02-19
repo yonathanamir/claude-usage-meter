@@ -185,6 +185,11 @@ class UsageFetcher(QObject):
     # Main entry point
     # ------------------------------------------------------------------
 
+    def login_and_run(self):
+        """Force a fresh ``claude /login``, then fetch usage."""
+        self._login()
+        self.run()
+
     def run(self):
         try:
             creds = self._read_credentials()

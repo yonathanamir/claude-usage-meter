@@ -1,5 +1,4 @@
 import json
-import subprocess
 import sys
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -31,7 +30,6 @@ from constants import (
     MODE_LABELS,
     MENU_STYLESHEET,
     color_for_percent,
-    login_command,
 )
 from settings import SettingsDialog, DEFAULT_SETTINGS
 from fetcher import UsageFetcher
@@ -160,6 +158,20 @@ class MeterWidget(QWidget):
         self._fetcher = UsageFetcher()
         self._fetcher.moveToThread(self._thread)
         self._thread.started.connect(self._fetcher.run)
+        self._fetcher.finished.connect(self.set_data)
+        self._fetcher.finished.connect(self._thread.quit)
+        self._fetcher.error.connect(self.on_fetch_error)
+        self._fetcher.error.connect(self._thread.quit)
+        self._thread.start()
+
+    def login_and_fetch(self):
+        """Run ``claude /login`` in a background thread, then fetch usage."""
+        if self._thread and self._thread.isRunning():
+            return
+        self._thread = QThread()
+        self._fetcher = UsageFetcher()
+        self._fetcher.moveToThread(self._thread)
+        self._thread.started.connect(self._fetcher.login_and_run)
         self._fetcher.finished.connect(self.set_data)
         self._fetcher.finished.connect(self._thread.quit)
         self._fetcher.error.connect(self.on_fetch_error)
@@ -403,10 +415,7 @@ class MeterWidget(QWidget):
         elif action == refresh_action:
             self.fetch_usage()
         elif action == login_action:
-            try:
-                subprocess.Popen(login_command(), shell=True)
-            except Exception:
-                pass
+            self.login_and_fetch()
         elif action == settings_action:
             self.show_settings()
         elif action == about_action:

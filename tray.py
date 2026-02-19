@@ -1,10 +1,8 @@
-import subprocess
-
 from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from constants import COLOR_ORANGE, MENU_STYLESHEET, login_command
+from constants import COLOR_ORANGE, MENU_STYLESHEET
 
 
 def make_tray_icon() -> QIcon:
@@ -53,7 +51,7 @@ def setup_tray(app, meter) -> QSystemTrayIcon:
     tray_menu.addAction(refresh_action)
 
     login_action = QAction("Log in", tray_menu)
-    login_action.triggered.connect(lambda: subprocess.Popen(login_command(), shell=True))
+    login_action.triggered.connect(meter.login_and_fetch)
     tray_menu.addAction(login_action)
 
     settings_action = QAction("Settings", tray_menu)
