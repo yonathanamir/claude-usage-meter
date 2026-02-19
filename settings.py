@@ -31,6 +31,8 @@ DEFAULT_SETTINGS = {
     "font_color": "#FFFFFF",
     "font_family": _DEFAULT_FONT,
     "font_size": 12,
+    "hover_font_size": 9,
+    "badge_size": 7,
     "show_number": True,
     "show_badge": True,
     "color_bg": "#1a1714",
@@ -158,8 +160,41 @@ class SettingsDialog(QDialog):
         self._show_badge.setChecked(self.settings.get("show_badge", True))
         font_lay.addRow(self._show_badge)
 
+        badge_size_lay = QHBoxLayout()
+        self._badge_size_slider = QSlider(Qt.Horizontal)
+        self._badge_size_slider.setRange(5, 12)
+        self._badge_size_slider.setValue(self.settings.get("badge_size", DEFAULT_SETTINGS["badge_size"]))
+        self._badge_size_label = QLabel(str(self._badge_size_slider.value()))
+        self._badge_size_label.setFixedWidth(24)
+        self._badge_size_slider.valueChanged.connect(
+            lambda v: self._badge_size_label.setText(str(v))
+        )
+        badge_size_lay.addWidget(self._badge_size_slider)
+        badge_size_lay.addWidget(self._badge_size_label)
+        font_lay.addRow("Badge size:", badge_size_lay)
+
         font_group.setLayout(font_lay)
         root.addWidget(font_group)
+
+        # --- Hover View ---
+        hover_group = QGroupBox("Hover View")
+        hover_lay = QFormLayout()
+
+        hover_size_lay = QHBoxLayout()
+        self._hover_font_size_slider = QSlider(Qt.Horizontal)
+        self._hover_font_size_slider.setRange(6, 14)
+        self._hover_font_size_slider.setValue(self.settings.get("hover_font_size", DEFAULT_SETTINGS["hover_font_size"]))
+        self._hover_font_size_label = QLabel(str(self._hover_font_size_slider.value()))
+        self._hover_font_size_label.setFixedWidth(24)
+        self._hover_font_size_slider.valueChanged.connect(
+            lambda v: self._hover_font_size_label.setText(str(v))
+        )
+        hover_size_lay.addWidget(self._hover_font_size_slider)
+        hover_size_lay.addWidget(self._hover_font_size_label)
+        hover_lay.addRow("Font size:", hover_size_lay)
+
+        hover_group.setLayout(hover_lay)
+        root.addWidget(hover_group)
 
         # --- Refresh Display ---
         refresh_group = QGroupBox("Refresh Display")
@@ -217,6 +252,8 @@ class SettingsDialog(QDialog):
         self._radius_slider.valueChanged.connect(lambda _: self._emit_live())
         self._font_family.currentTextChanged.connect(lambda _: self._emit_live())
         self._font_size_slider.valueChanged.connect(lambda _: self._emit_live())
+        self._hover_font_size_slider.valueChanged.connect(lambda _: self._emit_live())
+        self._badge_size_slider.valueChanged.connect(lambda _: self._emit_live())
         self._show_number.stateChanged.connect(lambda _: self._emit_live())
         self._show_badge.stateChanged.connect(lambda _: self._emit_live())
         self._current_session.currentTextChanged.connect(lambda _: self._emit_live())
@@ -229,6 +266,8 @@ class SettingsDialog(QDialog):
         s["radius"] = self._radius_slider.value()
         s["font_family"] = self._font_family.currentText()
         s["font_size"] = self._font_size_slider.value()
+        s["hover_font_size"] = self._hover_font_size_slider.value()
+        s["badge_size"] = self._badge_size_slider.value()
         s["show_number"] = self._show_number.isChecked()
         s["show_badge"] = self._show_badge.isChecked()
         s["current_session_display"] = self._current_session.currentText()
@@ -283,6 +322,16 @@ class SettingsDialog(QDialog):
         self._font_size_slider.setValue(defaults["font_size"])
         self._font_size_label.setText(str(defaults["font_size"]))
         self._font_size_slider.blockSignals(False)
+
+        self._hover_font_size_slider.blockSignals(True)
+        self._hover_font_size_slider.setValue(defaults["hover_font_size"])
+        self._hover_font_size_label.setText(str(defaults["hover_font_size"]))
+        self._hover_font_size_slider.blockSignals(False)
+
+        self._badge_size_slider.blockSignals(True)
+        self._badge_size_slider.setValue(defaults["badge_size"])
+        self._badge_size_label.setText(str(defaults["badge_size"]))
+        self._badge_size_slider.blockSignals(False)
 
         self._show_number.blockSignals(True)
         self._show_number.setChecked(defaults["show_number"])

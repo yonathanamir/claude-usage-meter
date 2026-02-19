@@ -286,13 +286,21 @@ class MeterWidget(QWidget):
         # --- Mode badge (top-left) ---
         if self.settings.get("show_badge", True):
             mode_label = MODE_LABELS[self._mode]
-            badge_font = QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 7, QFont.Bold)
+            badge_font = QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("badge_size", DEFAULT_SETTINGS["badge_size"]), QFont.Bold)
             fm = QFontMetrics(badge_font)
             text_w = fm.horizontalAdvance(mode_label)
             badge_w = text_w + 6
             badge_h = fm.height() + 2
-            badge_x = cx - radius + 1
-            badge_y = cy - radius + 1
+            # Reference metrics at default badge size (7) for stable positioning
+            ref_font = QFont(badge_font)
+            ref_font.setPointSize(DEFAULT_SETTINGS["badge_size"])
+            ref_fm = QFontMetrics(ref_font)
+            ref_w = ref_fm.horizontalAdvance(mode_label) + 6
+            ref_h = ref_fm.height() + 2
+            # At default size, badge sits 1px inside the circle edge.
+            # For larger sizes, shift outward by half the growth so it straddles.
+            badge_x = cx - radius + 1 - (badge_w - ref_w) // 2
+            badge_y = cy - radius + 1 - (badge_h - ref_h) // 2
 
             # Badge background
             badge_bg = QColor(self.settings.get("color_bg", DEFAULT_SETTINGS["color_bg"]))
@@ -318,12 +326,17 @@ class MeterWidget(QWidget):
         active_warning = self._warning or self._check_stale()
         if active_warning:
             warn_label = "!"
-            warn_font = QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 7, QFont.Bold)
+            warn_font = QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("badge_size", DEFAULT_SETTINGS["badge_size"]), QFont.Bold)
             wfm = QFontMetrics(warn_font)
             wb_w = wfm.horizontalAdvance(warn_label) + 6
             wb_h = wfm.height() + 2
-            wb_x = cx - radius + 1
-            wb_y = cy + radius - wb_h - 1
+            ref_font = QFont(warn_font)
+            ref_font.setPointSize(DEFAULT_SETTINGS["badge_size"])
+            ref_fm = QFontMetrics(ref_font)
+            ref_w = ref_fm.horizontalAdvance(warn_label) + 6
+            ref_h = ref_fm.height() + 2
+            wb_x = cx - radius + 1 - (wb_w - ref_w) // 2
+            wb_y = cy + radius - ref_h - 1 - (wb_h - ref_h) // 2
 
             # Badge background (red)
             p.setPen(Qt.NoPen)
@@ -502,9 +515,11 @@ class MeterWidget(QWidget):
             self._timer.start(interval_ms)
 
     def show_settings(self):
+        self._show_tooltip()
         dialog = SettingsDialog(self.settings, self)
         dialog.settings_changed.connect(self._on_settings_changed)
         dialog.exec()
+        self._tooltip.hide()
         # After dialog closes, reload whatever was saved (or reverted)
         self.load_settings()
         self.apply_settings()

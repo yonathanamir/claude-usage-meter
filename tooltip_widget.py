@@ -81,9 +81,11 @@ class TooltipWidget(QWidget):
         p.setBrush(Qt.NoBrush)
         p.drawRoundedRect(self.rect().adjusted(4, 4, -4, -4), 10, 10)
 
+        hfs = self.settings.get("hover_font_size", DEFAULT_SETTINGS.get("hover_font_size", 9))
+
         if not self._data:
             p.setPen(QColor("#aaa"))
-            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 10))
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), hfs + 1))
             p.drawText(self.rect(), Qt.AlignCenter, "Loading...")
             p.end()
             return
@@ -97,13 +99,13 @@ class TooltipWidget(QWidget):
         tier = self._data.get("_rateLimitTier", "")
 
         p.setPen(QColor(self.settings.get("font_color", DEFAULT_SETTINGS["font_color"])))
-        p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 11, QFont.Bold))
+        p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), hfs + 2, QFont.Bold))
         p.drawText(x_pad, y + 14, f"Claude {plan_label}")
 
         if tier:
             tier_short = tier.replace("default_claude_", "").replace("_", " ").title()
             p.setPen(QColor("#888"))
-            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 8))
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), hfs - 1))
             p.drawText(x_pad, y + 28, tier_short)
 
         y += 38
@@ -134,7 +136,7 @@ class TooltipWidget(QWidget):
             label_color = QColor(self.settings.get("font_color", DEFAULT_SETTINGS["font_color"])) if is_active else QColor("#ccc")
             p.setPen(label_color)
             font_weight = QFont.Bold if is_active else QFont.Normal
-            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 9, font_weight))
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), hfs, font_weight))
             p.drawText(x_pad, y + 13, label)
 
             pct_text = f"{util:.0f}%"
@@ -176,7 +178,7 @@ class TooltipWidget(QWidget):
                             reset_str = f"resets in {hours}h {mins}m" if hours else f"resets in {mins}m"
 
                         p.setPen(QColor("#666"))
-                        p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 7))
+                        p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), hfs - 2))
                         p.drawText(x_pad, y + bar_h + 10, reset_str)
                 except Exception:
                     pass
@@ -187,7 +189,7 @@ class TooltipWidget(QWidget):
         extra = self._data.get("extra_usage")
         if extra and extra.get("is_enabled"):
             p.setPen(QColor("#888"))
-            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 8))
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), hfs - 1))
             limit = extra.get("monthly_limit")
             used = extra.get("used_credits")
             if limit is not None and used is not None:
@@ -212,7 +214,7 @@ class TooltipWidget(QWidget):
             p.drawRoundedRect(warn_rect_x, y, warn_rect_w, warn_h, 4, 4)
             # Warning text in muted red
             p.setPen(QColor(230, 120, 100))
-            warn_font = QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 8)
+            warn_font = QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), hfs - 1)
             p.setFont(warn_font)
             fm = QFontMetrics(warn_font)
             elided = fm.elidedText(self._warning, Qt.ElideRight, warn_rect_w - 2 * warn_pad)
@@ -233,7 +235,7 @@ class TooltipWidget(QWidget):
             except Exception:
                 age_str = ""
             p.setPen(QColor("#555"))
-            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), 7))
+            p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), hfs - 2))
             p.drawText(x_pad, self.height() - 10, f"Updated {age_str}")
 
         p.end()
