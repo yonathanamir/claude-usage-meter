@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-usage-meter"
+version = "1.2.0"
+description = "Floating desktop widget showing Claude API usage"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Yonathan Amir", email = "yonathanamir@users.noreply.github.com" },
+]
+dependencies = [
+    "PySide6>=6.0",
+    "requests>=2.28",
+]
+
+[project.urls]
+Homepage = "https://github.com/yonathanamir/claude-usage-meter"
+Issues = "https://github.com/yonathanamir/claude-usage-meter/issues"
+
+[project.scripts]
+claude-usage-meter = "app:main"
+
+[tool.setuptools]
+py-modules = ["app", "meter_widget", "tooltip_widget", "settings", "tray", "fetcher", "constants"]
