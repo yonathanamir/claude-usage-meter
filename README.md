@@ -56,16 +56,13 @@ Pre-built executables are available on the [Releases](https://github.com/yonatha
 - Windows 10/11, macOS 10.14+, or Linux (Ubuntu 20.04+, Fedora, etc.)
 - [Claude Code CLI](https://claude.com/code) installed and configured
 
-### Homebrew (macOS/Linux)
+### Homebrew (macOS)
 
 ```bash
-brew install gilad94s/claude-usage-meter/claude-usage-meter
+brew install --cask gilad94s/claude-usage-meter/claude-usage-meter
 ```
 
-Then run:
-```bash
-claude-usage-meter
-```
+This installs `ClaudeUsageMeter.app` to `/Applications` — searchable via Spotlight.
 
 ### From Source
 
