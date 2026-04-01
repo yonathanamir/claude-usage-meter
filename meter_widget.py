@@ -429,8 +429,13 @@ class MeterWidget(QWidget):
             if POSITION_PATH.exists():
                 with open(POSITION_PATH, "r", encoding="utf-8") as f:
                     d = json.load(f)
-                self.move(d["x"], d["y"])
-                return
+                pos = QPoint(d["x"], d["y"])
+                # Verify the saved position is visible on a current screen
+                widget_rect = QRect(pos, self.size())
+                for screen in QApplication.screens():
+                    if screen.availableGeometry().intersects(widget_rect):
+                        self.move(pos)
+                        return
         except Exception:
             pass
         # Default: right-center
