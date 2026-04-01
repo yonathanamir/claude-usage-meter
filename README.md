@@ -98,7 +98,7 @@ The executable will be created in the `dist/` directory:
 
 **macOS**:
 - The app bundle can be moved to `/Applications` for easy access
-- You may need to allow the app in System Preferences → Security & Privacy on first run
+- You may need to allow the app in System Preferences → Security & Privacy on first run (or by running `xattr -cr /Applications/ClaudeUsageMeter.app`)
 - On macOS, `iconutil` is used to generate the `.icns` icon
 
 **Linux**:
