@@ -519,10 +519,22 @@ class MeterWidget(QWidget):
         if self._timer.interval() != interval_ms:
             self._timer.start(interval_ms)
 
+    def _reset_to_main_display(self):
+        """Reset indicator position to top-left corner of main display."""
+        screen = QApplication.primaryScreen().availableGeometry()
+        radius = self.settings.get("radius", 10)
+        circle_size = 2 * radius + 2 * EDGE_MARGIN
+        x = screen.left() + EDGE_MARGIN
+        y = screen.top() + EDGE_MARGIN
+        target = QPoint(x, y)
+        self.move(target)
+        self._save_position(target)
+
     def show_settings(self):
         self._show_tooltip()
         dialog = SettingsDialog(self.settings, self)
         dialog.settings_changed.connect(self._on_settings_changed)
+        dialog.reset_position.connect(self._reset_to_main_display)
         dialog.exec()
         self._tooltip.hide()
         # After dialog closes, reload whatever was saved (or reverted)

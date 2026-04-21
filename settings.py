@@ -2,7 +2,7 @@ import json
 from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QPoint
 from PySide6.QtGui import QColor
 
 from tray import make_tray_icon
@@ -55,6 +55,7 @@ def _color_button_style(color_hex: str) -> str:
 
 class SettingsDialog(QDialog):
     settings_changed = Signal(dict)
+    reset_position = Signal()  # Signal to trigger position reset
 
     def __init__(self, current_settings: dict, parent=None):
         super().__init__(parent)
@@ -236,6 +237,12 @@ class SettingsDialog(QDialog):
         self._restore_btn = QPushButton("Restore Defaults")
         self._restore_btn.clicked.connect(self._restore_defaults)
         btn_lay.addWidget(self._restore_btn)
+
+        self._reset_pos_btn = QPushButton("Reset to Main Display")
+        self._reset_pos_btn.clicked.connect(self._reset_position)
+        self._reset_pos_btn.setToolTip("Reset indicator to top-left corner of main display")
+        btn_lay.addWidget(self._reset_pos_btn)
+
         btn_lay.addStretch()
         self._cancel_btn = QPushButton("Cancel")
         self._cancel_btn.clicked.connect(self._cancel)
@@ -359,6 +366,10 @@ class SettingsDialog(QDialog):
             btn.setToolTip(hex_val)
 
         self.settings_changed.emit(self.settings)
+
+    def _reset_position(self):
+        """Emit signal to reset indicator position to main display."""
+        self.reset_position.emit()
 
     # -- Persistence -----------------------------------------------------------
 
