@@ -33,6 +33,9 @@ from constants import (
     MODE_LABELS,
     MENU_STYLESHEET,
     color_for_percent,
+    provider_settings,
+    PROVIDER_CLAUDE,
+    PROVIDER_ORDER,
 )
 from settings import SettingsDialog, DEFAULT_SETTINGS
 from fetcher import UsageFetcher
@@ -40,6 +43,8 @@ from tooltip_widget import TooltipWidget
 
 
 class MeterWidget(QWidget):
+    STACK_OVERLAP_RATIO = 0.4
+
     def __init__(self):
         super().__init__()
         self.setWindowFlags(
@@ -48,12 +53,15 @@ class MeterWidget(QWidget):
             | Qt.Tool
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setMouseTracking(True)
 
         self.settings = {}
-        self._data: dict | None = None
+        self._data: dict[str, dict | None] = {}
         self._mode = MODE_SESSION
-        self._warning: str | None = None  # current warning/error message
-        self._warn_badge_rect: QRect | None = None  # hit-test area for warning badge
+        self._warnings: dict[str, str | None] = {}
+        self._warn_badge_rects: dict[str, QRect] = {}
+        self._provider_rects: dict[str, QRect] = {}
+        self._active_provider = PROVIDER_CLAUDE
         self._dragging = False
         self._drag_started = False
         self._drag_offset = QPoint()
@@ -92,29 +100,75 @@ class MeterWidget(QWidget):
         self.settings = SettingsDialog.load_settings()
 
     def apply_settings(self):
-        radius = self.settings.get("radius", 10)
-        size = 2 * radius + 2 * EDGE_MARGIN
-        self.setFixedSize(size, size)
+        width, height = self._stack_dimensions()
+        self.setFixedSize(width, height)
         if self._tooltip:
             self._tooltip.settings = self.settings
             self._tooltip._active_mode = self._mode
+            self._tooltip.provider_id = self._active_provider
             self._tooltip.update()
         self.update()
 
     # -- helpers --------------------------------------------------------------
 
-    def _active_bucket(self) -> dict | None:
-        """Return the usage dict for the currently selected mode."""
-        if not self._data:
-            return None
-        return self._data.get(MODE_KEYS[self._mode])
+    def _visible_providers(self) -> list[str]:
+        providers = self.settings.get("providers", {})
+        visible = [
+            provider_id for provider_id in PROVIDER_ORDER
+            if providers.get(provider_id, {}).get("enabled", True)
+        ]
+        return visible or [PROVIDER_CLAUDE]
 
-    def _active_percent(self) -> float:
-        b = self._active_bucket()
+    def _enabled_providers(self) -> list[str]:
+        return self._visible_providers()
+
+    def _circle_size(self) -> int:
+        radius = self.settings.get("radius", 10)
+        return 2 * radius + 2 * EDGE_MARGIN
+
+    def _stack_step(self) -> int:
+        circle_size = self._circle_size()
+        return max(1, int(circle_size * (1 - self.STACK_OVERLAP_RATIO)))
+
+    def _stack_dimensions(self) -> tuple[int, int]:
+        circle_size = self._circle_size()
+        providers = self._visible_providers()
+        height = circle_size + max(0, len(providers) - 1) * self._stack_step()
+        return circle_size, height
+
+    def _provider_at(self, point: QPoint) -> str:
+        for provider_id, rect in self._provider_rects.items():
+            if rect.contains(point):
+                return provider_id
+        return self._active_provider
+
+    def _set_active_provider(self, provider_id: str):
+        visible = self._visible_providers()
+        if provider_id not in visible:
+            provider_id = visible[0]
+        self._active_provider = provider_id
+        if self._tooltip:
+            self._tooltip.provider_id = provider_id
+            self._tooltip._active_mode = self._mode
+            self._tooltip.set_data(
+                self._data.get(provider_id),
+                warning=self._warnings.get(provider_id) or self._check_stale(provider_id),
+            )
+
+    def _active_bucket(self, provider_id: str | None = None) -> dict | None:
+        """Return the usage dict for the currently selected mode."""
+        provider_id = provider_id or self._active_provider
+        data = self._data.get(provider_id)
+        if not data:
+            return None
+        return data.get(MODE_KEYS[self._mode])
+
+    def _active_percent(self, provider_id: str | None = None) -> float:
+        b = self._active_bucket(provider_id)
         return (b.get("utilization", 0) or 0) if b else 0.0
 
-    def _active_resets_at(self) -> str:
-        b = self._active_bucket()
+    def _active_resets_at(self, provider_id: str | None = None) -> str:
+        b = self._active_bucket(provider_id)
         return (b.get("resets_at", "") or "") if b else ""
 
     def _format_reset(self, resets_iso: str) -> str:
@@ -148,23 +202,29 @@ class MeterWidget(QWidget):
 
     # -- Data -----------------------------------------------------------------
 
-    def set_data(self, data: dict):
-        self._data = data
-        self._warning = None  # clear error on successful fetch
-        self._tooltip.set_data(data, warning=None)
+    def set_data(self, results: dict):
+        for provider_id, result in results.items():
+            self._data[provider_id] = result.get("data")
+            self._warnings[provider_id] = result.get("warning")
+        self._tooltip.set_data(
+            self._data.get(self._active_provider),
+            warning=self._warnings.get(self._active_provider),
+        )
         self.update()
 
     def on_fetch_error(self, msg: str):
         print(f"[meter] fetch error: {msg}", file=sys.stderr)
-        self._warning = msg
+        self._warnings[self._active_provider] = msg
         self._tooltip.set_warning(msg)
         self.update()
 
-    def _check_stale(self) -> str | None:
+    def _check_stale(self, provider_id: str | None = None) -> str | None:
         """Return a warning string if data is stale (>2x poll interval)."""
-        if not self._data:
+        provider_id = provider_id or self._active_provider
+        data = self._data.get(provider_id)
+        if not data:
             return None
-        fetched = self._data.get("_fetchedAt", "")
+        fetched = data.get("_fetchedAt", "")
         if not fetched:
             return None
         try:
@@ -182,7 +242,7 @@ class MeterWidget(QWidget):
         if self._thread and self._thread.isRunning():
             return
         self._thread = QThread()
-        self._fetcher = UsageFetcher()
+        self._fetcher = UsageFetcher(self._enabled_providers())
         self._fetcher.moveToThread(self._thread)
         self._thread.started.connect(self._fetcher.run)
         self._fetcher.finished.connect(self.set_data)
@@ -196,7 +256,7 @@ class MeterWidget(QWidget):
         if self._thread and self._thread.isRunning():
             return
         self._thread = QThread()
-        self._fetcher = UsageFetcher()
+        self._fetcher = UsageFetcher(self._enabled_providers())
         self._fetcher.moveToThread(self._thread)
         self._thread.started.connect(self._fetcher.login_and_run)
         self._fetcher.finished.connect(self.set_data)
@@ -211,11 +271,26 @@ class MeterWidget(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
 
-        pct = self._active_percent()
-
         radius = self.settings.get("radius", 10)
-        circle_size = 2 * radius + 2 * EDGE_MARGIN
-        cx, cy = circle_size // 2, circle_size // 2
+        circle_size = self._circle_size()
+        step = self._stack_step()
+        cx = circle_size // 2
+        self._provider_rects = {}
+        self._warn_badge_rects = {}
+
+        for index, provider_id in enumerate(self._visible_providers()):
+            y_offset = index * step
+            cy = y_offset + circle_size // 2
+            self._provider_rects[provider_id] = QRect(0, y_offset, circle_size, circle_size)
+            self._paint_provider_circle(p, provider_id, cx, cy, circle_size, radius)
+
+        p.end()
+
+    def _paint_provider_circle(self, p, provider_id: str, cx: int, cy: int, circle_size: int, radius: int):
+        pct = self._active_percent(provider_id)
+        provider = provider_settings(self.settings, provider_id)
+        data = self._data.get(provider_id)
+        warning = self._warnings.get(provider_id)
 
         # Drop shadow
         shadow = QRadialGradient(cx, cy + 2, radius + 6)
@@ -226,14 +301,14 @@ class MeterWidget(QWidget):
         p.drawEllipse(QPoint(cx, cy + 2), radius + 4, radius + 4)
 
         # Background circle
-        p.setBrush(QColor(self.settings.get("color_bg", DEFAULT_SETTINGS["color_bg"])))
+        p.setBrush(QColor(provider.get("color_bg", DEFAULT_SETTINGS["color_bg"])))
         p.setPen(Qt.NoPen)
         p.drawEllipse(QPoint(cx, cy), radius, radius)
 
         # Track ring
         ring_r = radius - 5
         ring_rect = QRect(cx - ring_r, cy - ring_r, ring_r * 2, ring_r * 2)
-        track_color = QColor(self.settings.get("color_orange", DEFAULT_SETTINGS["color_orange"]))
+        track_color = QColor(provider.get("color_orange", DEFAULT_SETTINGS["color_orange"]))
         track_color.setAlpha(30)
         track_pen = QPen(track_color, 5)
         track_pen.setCapStyle(Qt.RoundCap)
@@ -242,7 +317,7 @@ class MeterWidget(QWidget):
         p.drawArc(ring_rect, 0, 360 * 16)
 
         # Progress arc
-        arc_color = color_for_percent(pct, self.settings) if pct > 0 else QColor(self.settings.get("font_color", DEFAULT_SETTINGS["font_color"]))
+        arc_color = color_for_percent(pct, self.settings, provider_id) if pct > 0 else QColor(self.settings.get("font_color", DEFAULT_SETTINGS["font_color"]))
         if pct > 0:
             arc_pen = QPen(arc_color, 5)
             arc_pen.setCapStyle(Qt.RoundCap)
@@ -260,32 +335,32 @@ class MeterWidget(QWidget):
         # --- Center: percentage number (shifted up to make room for reset line) ---
         show_number = self.settings.get("show_number", True)
         p.setPen(arc_color)
-        if self._data:
+        if data:
             if show_number:
                 p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("font_size", DEFAULT_SETTINGS["font_size"]), QFont.Bold))
-                p.drawText(QRect(0, 0, circle_size, cy + 2),
+                p.drawText(QRect(cx - circle_size // 2, 0, circle_size, cy + 2),
                            Qt.AlignHCenter | Qt.AlignBottom,
                            f"{int(pct)}")
         else:
             if show_number:
                 p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("font_size", DEFAULT_SETTINGS["font_size"]) - 2, QFont.Bold))
-                p.drawText(self.rect(), Qt.AlignCenter, "...")
-            p.end()
+                fallback = "!" if warning else "..."
+                p.drawText(QRect(cx - circle_size // 2, 0, circle_size, circle_size), Qt.AlignCenter, fallback)
             return
 
         # --- Bottom line: reset countdown ---
         if show_number:
-            reset_str = self._format_reset(self._active_resets_at())
+            reset_str = self._format_reset(self._active_resets_at(provider_id))
             if reset_str:
                 p.setPen(QColor(200, 200, 200, 140))
                 p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("font_size", DEFAULT_SETTINGS["font_size"]) - 5))
-                p.drawText(QRect(0, cy + 4, circle_size, 16),
+                p.drawText(QRect(cx - circle_size // 2, cy + 4, circle_size, 16),
                            Qt.AlignHCenter | Qt.AlignTop,
                            reset_str)
 
         # --- Mode badge (top-left) ---
         if self.settings.get("show_badge", True):
-            mode_label = MODE_LABELS[self._mode]
+            mode_label = provider.get("short_name", "") + MODE_LABELS[self._mode]
             badge_font = QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("badge_size", DEFAULT_SETTINGS["badge_size"]), QFont.Bold)
             fm = QFontMetrics(badge_font)
             text_w = fm.horizontalAdvance(mode_label)
@@ -303,7 +378,7 @@ class MeterWidget(QWidget):
             badge_y = cy - radius + 1 - (badge_h - ref_h) // 2
 
             # Badge background
-            badge_bg = QColor(self.settings.get("color_bg", DEFAULT_SETTINGS["color_bg"]))
+            badge_bg = QColor(provider.get("color_bg", DEFAULT_SETTINGS["color_bg"]))
             badge_bg.setAlpha(220)
             p.setPen(Qt.NoPen)
             p.setBrush(badge_bg)
@@ -323,7 +398,7 @@ class MeterWidget(QWidget):
                        Qt.AlignCenter, mode_label)
 
         # --- Warning badge (bottom-left, styled like mode badge) ---
-        active_warning = self._warning or self._check_stale()
+        active_warning = warning or self._check_stale(provider_id)
         if active_warning:
             warn_label = "!"
             warn_font = QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), self.settings.get("badge_size", DEFAULT_SETTINGS["badge_size"]), QFont.Bold)
@@ -355,16 +430,13 @@ class MeterWidget(QWidget):
             p.drawText(QRect(wb_x, wb_y, wb_w, wb_h),
                        Qt.AlignCenter, warn_label)
 
-            self._warn_badge_rect = QRect(wb_x, wb_y, wb_w, wb_h)
-        else:
-            self._warn_badge_rect = None
-
-        p.end()
+            self._warn_badge_rects[provider_id] = QRect(wb_x, wb_y, wb_w, wb_h)
 
     # -- Drag & Click ---------------------------------------------------------
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
+            self._set_active_provider(self._provider_at(event.position().toPoint()))
             self._dragging = True
             self._drag_started = False
             self._drag_offset = event.globalPosition().toPoint() - self.pos()
@@ -373,18 +445,21 @@ class MeterWidget(QWidget):
         if self._dragging:
             self._drag_started = True
             self.move(event.globalPosition().toPoint() - self._drag_offset)
+        else:
+            self._set_active_provider(self._provider_at(event.position().toPoint()))
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton and self._dragging:
+            provider_id = self._provider_at(event.position().toPoint())
+            self._set_active_provider(provider_id)
             was_drag = self._drag_started
             self._dragging = False
             self._drag_started = False
             if was_drag:
                 self._snap_to_edge()
-            elif (self._warn_badge_rect
-                  and self._warn_badge_rect.contains(event.position().toPoint())):
+            elif self._warn_badge_rects.get(provider_id, QRect()).contains(event.position().toPoint()):
                 # Click on warning badge — show error detail window
-                active_warning = self._warning or self._check_stale()
+                active_warning = self._warnings.get(provider_id) or self._check_stale(provider_id)
                 if active_warning:
                     self._show_error_window(active_warning)
             else:
@@ -397,17 +472,15 @@ class MeterWidget(QWidget):
     def _snap_to_edge(self):
         screen = QApplication.primaryScreen().availableGeometry()
         pos = self.pos()
-        radius = self.settings.get("radius", 10)
-        circle_size = 2 * radius + 2 * EDGE_MARGIN
-        mid_x = pos.x() + circle_size // 2
+        mid_x = pos.x() + self.width() // 2
 
         if mid_x < screen.center().x():
             target_x = screen.left() + EDGE_MARGIN
         else:
-            target_x = screen.right() - circle_size - EDGE_MARGIN
+            target_x = screen.right() - self.width() - EDGE_MARGIN
 
         # Clamp Y
-        target_y = max(screen.top() + EDGE_MARGIN, min(pos.y(), screen.bottom() - circle_size - EDGE_MARGIN))
+        target_y = max(screen.top() + EDGE_MARGIN, min(pos.y(), screen.bottom() - self.height() - EDGE_MARGIN))
 
         target = QPoint(target_x, target_y)
         self._snap_anim.setStartValue(self.pos())
@@ -440,34 +513,33 @@ class MeterWidget(QWidget):
             pass
         # Default: right-center
         screen = QApplication.primaryScreen().availableGeometry()
-        radius = self.settings.get("radius", 10)
-        circle_size = 2 * radius + 2 * EDGE_MARGIN
-        x = screen.right() - circle_size - EDGE_MARGIN
-        y = screen.center().y() - circle_size // 2
+        x = screen.right() - self.width() - EDGE_MARGIN
+        y = screen.center().y() - self.height() // 2
         self.move(x, y)
 
     # -- Tooltip --------------------------------------------------------------
 
     def enterEvent(self, event):
+        if hasattr(event, "position"):
+            self._set_active_provider(self._provider_at(event.position().toPoint()))
         self._show_tooltip()
 
     def leaveEvent(self, event):
         self._tooltip.hide()
 
     def _show_tooltip(self):
-        # Update warning state (stale check is dynamic)
-        active_warning = self._warning or self._check_stale()
-        self._tooltip.set_warning(active_warning)
+        active_warning = self._warnings.get(self._active_provider) or self._check_stale(self._active_provider)
+        self._tooltip.provider_id = self._active_provider
+        self._tooltip._active_mode = self._mode
+        self._tooltip.set_data(self._data.get(self._active_provider), warning=active_warning)
 
         screen = QApplication.primaryScreen().availableGeometry()
         pos = self.pos()
-        radius = self.settings.get("radius", 10)
-        circle_size = 2 * radius + 2 * EDGE_MARGIN
 
         # Position tooltip to the left or right of the circle
         tt_w = self._tooltip.width()
-        if pos.x() + circle_size + tt_w + 8 <= screen.right():
-            tx = pos.x() + circle_size + 8
+        if pos.x() + self.width() + tt_w + 8 <= screen.right():
+            tx = pos.x() + self.width() + 8
         else:
             tx = pos.x() - tt_w - 8
 
@@ -481,6 +553,7 @@ class MeterWidget(QWidget):
     # -- Right-click menu -----------------------------------------------------
 
     def contextMenuEvent(self, event):
+        self._set_active_provider(self._provider_at(event.pos()))
         menu = QMenu(self)
         menu.setStyleSheet(MENU_STYLESHEET)
 
@@ -522,8 +595,6 @@ class MeterWidget(QWidget):
     def _reset_to_main_display(self):
         """Reset indicator position to top-left corner of main display."""
         screen = QApplication.primaryScreen().availableGeometry()
-        radius = self.settings.get("radius", 10)
-        circle_size = 2 * radius + 2 * EDGE_MARGIN
         x = screen.left() + EDGE_MARGIN
         y = screen.top() + EDGE_MARGIN
         target = QPoint(x, y)

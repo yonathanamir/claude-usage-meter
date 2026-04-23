@@ -17,6 +17,7 @@ IS_WINDOWS = SYSTEM == "Windows"
 
 CREDENTIALS_PATH = Path.home() / ".claude" / ".credentials.json"
 POSITION_PATH = Path.home() / ".claude" / "meter-position.json"
+CODEX_SESSIONS_PATH = Path.home() / ".codex" / "sessions"
 
 # ---------------------------------------------------------------------------
 # macOS Keychain
@@ -57,6 +58,31 @@ MODE_WEEKLY = 1    # seven_day
 MODE_KEYS = ["five_hour", "seven_day"]
 MODE_LABELS = ["5h", "7d"]
 
+PROVIDER_CLAUDE = "claude"
+PROVIDER_CODEX = "codex"
+PROVIDER_ORDER = [PROVIDER_CLAUDE, PROVIDER_CODEX]
+
+PROVIDER_DEFAULTS = {
+    PROVIDER_CLAUDE: {
+        "name": "Claude",
+        "short_name": "C",
+        "enabled": True,
+        "color_bg": "#1a1714",
+        "color_orange": "#d9773c",
+        "color_amber": "#e8a838",
+        "color_red": "#e74c3c",
+    },
+    PROVIDER_CODEX: {
+        "name": "Codex",
+        "short_name": "X",
+        "enabled": False,
+        "color_bg": "#101820",
+        "color_orange": "#2f80ed",
+        "color_amber": "#56ccf2",
+        "color_red": "#eb5757",
+    },
+}
+
 # ---------------------------------------------------------------------------
 # Colors
 # ---------------------------------------------------------------------------
@@ -85,13 +111,26 @@ MENU_STYLESHEET = """
 """
 
 
-def color_for_percent(pct: float, settings: dict | None = None) -> QColor:
+def provider_settings(settings: dict | None, provider_id: str) -> dict:
+    defaults = PROVIDER_DEFAULTS.get(provider_id, PROVIDER_DEFAULTS[PROVIDER_CLAUDE])
+    configured = (settings or {}).get("providers", {}).get(provider_id, {})
+    merged = defaults.copy()
+    merged.update(configured)
+    return merged
+
+
+def color_for_percent(
+    pct: float,
+    settings: dict | None = None,
+    provider_id: str = PROVIDER_CLAUDE,
+) -> QColor:
     if settings:
+        provider = provider_settings(settings, provider_id)
         if pct > 80:
-            return QColor(settings.get("color_red", "#e74c3c"))
+            return QColor(provider.get("color_red", "#e74c3c"))
         if pct > 50:
-            return QColor(settings.get("color_amber", "#e8a838"))
-        return QColor(settings.get("color_orange", "#d9773c"))
+            return QColor(provider.get("color_amber", "#e8a838"))
+        return QColor(provider.get("color_orange", "#d9773c"))
     if pct > 80:
         return COLOR_RED
     if pct > 50:

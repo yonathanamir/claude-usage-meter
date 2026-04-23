@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from constants import IS_MACOS, IS_WINDOWS
+from constants import IS_MACOS, IS_WINDOWS, PROVIDER_DEFAULTS, PROVIDER_ORDER
 
 SETTINGS_PATH = Path.home() / ".claude" / "meter-settings.json"
 
@@ -42,6 +42,7 @@ DEFAULT_SETTINGS = {
     "current_session_display": "Time Until",
     "weekly_session_display": "Date",
     "poll_interval_minutes": 5,
+    "providers": deepcopy(PROVIDER_DEFAULTS),
 }
 
 
@@ -119,6 +120,20 @@ class SettingsDialog(QDialog):
 
         colors_group.setLayout(colors_lay)
         root.addWidget(colors_group)
+
+        # --- Subscriptions ---
+        subscriptions_group = QGroupBox("Subscriptions")
+        subscriptions_lay = QVBoxLayout()
+        self._provider_checks: dict[str, QCheckBox] = {}
+        for provider_id in PROVIDER_ORDER:
+            provider = self.settings.get("providers", {}).get(provider_id, {})
+            provider_defaults = PROVIDER_DEFAULTS[provider_id]
+            checkbox = QCheckBox(provider_defaults["name"])
+            checkbox.setChecked(provider.get("enabled", provider_defaults["enabled"]))
+            self._provider_checks[provider_id] = checkbox
+            subscriptions_lay.addWidget(checkbox)
+        subscriptions_group.setLayout(subscriptions_lay)
+        root.addWidget(subscriptions_group)
 
         # --- Font ---
         font_group = QGroupBox("Font")
@@ -266,6 +281,8 @@ class SettingsDialog(QDialog):
         self._current_session.currentTextChanged.connect(lambda _: self._emit_live())
         self._weekly_session.currentTextChanged.connect(lambda _: self._emit_live())
         self._poll_interval.currentTextChanged.connect(lambda _: self._emit_live())
+        for checkbox in self._provider_checks.values():
+            checkbox.stateChanged.connect(lambda _: self._emit_live())
 
     def _collect(self) -> dict:
         """Read all widget values into a settings dict."""
@@ -280,6 +297,15 @@ class SettingsDialog(QDialog):
         s["current_session_display"] = self._current_session.currentText()
         s["weekly_session_display"] = self._weekly_session.currentText()
         s["poll_interval_minutes"] = int(self._poll_interval.currentText())
+        providers = deepcopy(s.get("providers", PROVIDER_DEFAULTS))
+        for provider_id, checkbox in self._provider_checks.items():
+            provider = deepcopy(PROVIDER_DEFAULTS[provider_id])
+            provider.update(providers.get(provider_id, {}))
+            provider["enabled"] = checkbox.isChecked()
+            providers[provider_id] = provider
+        for key in ("color_bg", "color_orange", "color_amber", "color_red"):
+            providers["claude"][key] = s.get(key, DEFAULT_SETTINGS[key])
+        s["providers"] = providers
         # Color keys are updated directly in self.settings via _pick_color
         return s
 
@@ -360,6 +386,11 @@ class SettingsDialog(QDialog):
         self._poll_interval.setCurrentText(str(defaults["poll_interval_minutes"]))
         self._poll_interval.blockSignals(False)
 
+        for provider_id, checkbox in self._provider_checks.items():
+            checkbox.blockSignals(True)
+            checkbox.setChecked(defaults["providers"][provider_id]["enabled"])
+            checkbox.blockSignals(False)
+
         for key, btn in self._color_buttons.items():
             hex_val = defaults.get(key, "#FFFFFF")
             btn.setStyleSheet(_color_button_style(hex_val))
@@ -388,7 +419,16 @@ class SettingsDialog(QDialog):
                 settings = json.load(f)
                 for key, value in DEFAULT_SETTINGS.items():
                     if key not in settings:
-                        settings[key] = value
+                        settings[key] = deepcopy(value)
+                configured_providers = settings.get("providers", {})
+                providers = {}
+                for provider_id, provider_defaults in PROVIDER_DEFAULTS.items():
+                    provider = deepcopy(provider_defaults)
+                    provider.update(configured_providers.get(provider_id, {}))
+                    providers[provider_id] = provider
+                for key in ("color_bg", "color_orange", "color_amber", "color_red"):
+                    providers["claude"][key] = settings.get(key, DEFAULT_SETTINGS[key])
+                settings["providers"] = providers
                 return settings
             except json.JSONDecodeError:
                 return deepcopy(DEFAULT_SETTINGS)

@@ -2,19 +2,25 @@ import json
 import subprocess
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import requests
 from PySide6.QtCore import QObject, Signal
 
 from constants import (
     CREDENTIALS_PATH, USAGE_URL, PROFILE_URL, TOKEN_URL, BETA_HEADER,
-    IS_MACOS, KEYCHAIN_SERVICE, login_command,
+    IS_MACOS, KEYCHAIN_SERVICE, login_command, CODEX_SESSIONS_PATH,
+    PROVIDER_CLAUDE, PROVIDER_CODEX,
 )
 
 
 class UsageFetcher(QObject):
     finished = Signal(dict)
     error = Signal(str)
+
+    def __init__(self, providers: list[str] | None = None):
+        super().__init__()
+        self.providers = providers or [PROVIDER_CLAUDE]
 
     # ------------------------------------------------------------------
     # Credential reading
@@ -251,14 +257,29 @@ class UsageFetcher(QObject):
         self.run()
 
     def run(self):
+        results = {}
+        for provider_id in self.providers:
+            try:
+                if provider_id == PROVIDER_CLAUDE:
+                    results[provider_id] = {"data": self._fetch_claude_usage(), "warning": None}
+                elif provider_id == PROVIDER_CODEX:
+                    results[provider_id] = {"data": self._fetch_codex_usage(), "warning": None}
+            except Exception as exc:
+                results[provider_id] = {"data": None, "warning": str(exc)}
+
+        if results:
+            self.finished.emit(results)
+        else:
+            self.error.emit("No subscriptions are enabled")
+
+    def _fetch_claude_usage(self) -> dict:
         try:
             creds = self._read_credentials()
             if not creds:
                 self._login()
                 creds = self._read_credentials()
                 if not creds:
-                    self.error.emit("No credentials found after login")
-                    return
+                    raise RuntimeError("No credentials found after login")
 
             token = creds.get("accessToken")
             expires_at = creds.get("expiresAt", 0)
@@ -272,8 +293,7 @@ class UsageFetcher(QObject):
                     self._login()
                     creds = self._read_credentials()
                     if not creds:
-                        self.error.emit("Login failed")
-                        return
+                        raise RuntimeError("Login failed")
                     token = creds.get("accessToken")
 
             resp = self._fetch(token)
@@ -287,14 +307,12 @@ class UsageFetcher(QObject):
                     self._login()
                     creds = self._read_credentials()
                     if not creds:
-                        self.error.emit("Auth failed")
-                        return
+                        raise RuntimeError("Auth failed")
                     token = creds["accessToken"]
                     resp = self._fetch(token)
 
             if resp.status_code != 200:
-                self.error.emit(f"API {resp.status_code}: {resp.text[:200]}")
-                return
+                raise RuntimeError(f"API {resp.status_code}: {resp.text[:200]}")
 
             data = resp.json()
             # Attach subscription info from credentials
@@ -303,7 +321,90 @@ class UsageFetcher(QObject):
                 data["_subscriptionType"] = creds.get("subscriptionType", "")
                 data["_rateLimitTier"] = creds.get("rateLimitTier", "")
             data["_fetchedAt"] = datetime.now(timezone.utc).isoformat()
-            self.finished.emit(data)
+            return data
 
         except Exception as exc:
-            self.error.emit(str(exc))
+            raise RuntimeError(str(exc)) from exc
+
+    def _fetch_codex_usage(self) -> dict:
+        event = self._latest_codex_rate_limit_event()
+        if not event:
+            raise RuntimeError("No Codex rate-limit snapshot found. Run Codex once, then refresh.")
+
+        payload = event.get("payload", {})
+        rate_limits = payload.get("rate_limits") or {}
+        primary = rate_limits.get("primary") or {}
+        secondary = rate_limits.get("secondary") or {}
+        credits = rate_limits.get("credits") or {}
+
+        fetched_at = self._codex_timestamp(event.get("timestamp"))
+        data = {
+            "_subscriptionType": rate_limits.get("plan_type") or "codex",
+            "_rateLimitTier": "Credits available" if credits.get("has_credits") else "",
+            "_fetchedAt": fetched_at,
+        }
+
+        if primary:
+            data["five_hour"] = self._codex_bucket(primary)
+        if secondary:
+            data["seven_day"] = self._codex_bucket(secondary)
+        if credits:
+            data["extra_usage"] = {
+                "is_enabled": bool(credits.get("has_credits")),
+                "used_credits": None,
+                "monthly_limit": None,
+            }
+        if not primary and not secondary:
+            raise RuntimeError("Latest Codex snapshot did not include rate-limit data")
+        return data
+
+    @staticmethod
+    def _codex_bucket(raw: dict) -> dict:
+        resets_at = raw.get("resets_at")
+        if isinstance(resets_at, (int, float)):
+            resets_at = datetime.fromtimestamp(resets_at, tz=timezone.utc).isoformat()
+        return {
+            "utilization": raw.get("used_percent", 0) or 0,
+            "resets_at": resets_at or "",
+            "window_minutes": raw.get("window_minutes"),
+        }
+
+    @staticmethod
+    def _codex_timestamp(timestamp: str | None) -> str:
+        if not timestamp:
+            return datetime.now(timezone.utc).isoformat()
+        try:
+            return datetime.fromisoformat(timestamp.replace("Z", "+00:00")).isoformat()
+        except ValueError:
+            return datetime.now(timezone.utc).isoformat()
+
+    def _latest_codex_rate_limit_event(self) -> dict | None:
+        if not CODEX_SESSIONS_PATH.exists():
+            return None
+
+        files = sorted(
+            CODEX_SESSIONS_PATH.rglob("*.jsonl"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for path in files[:20]:
+            event = self._latest_rate_limit_event_in_file(path)
+            if event:
+                return event
+        return None
+
+    @staticmethod
+    def _latest_rate_limit_event_in_file(path: Path) -> dict | None:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return None
+        for line in reversed(lines):
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            payload = event.get("payload") or {}
+            if payload.get("type") == "token_count" and payload.get("rate_limits"):
+                return event
+        return None

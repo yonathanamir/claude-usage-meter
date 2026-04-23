@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
-from constants import MODE_SESSION, MODE_KEYS, color_for_percent
+from constants import MODE_SESSION, MODE_KEYS, color_for_percent, provider_settings, PROVIDER_CLAUDE
 from settings import DEFAULT_SETTINGS
 
 
@@ -23,6 +23,7 @@ class TooltipWidget(QWidget):
         self._data: dict | None = None
         self._warning: str | None = None
         self._active_mode: int = MODE_SESSION
+        self.provider_id = PROVIDER_CLAUDE
         self._width = 260
         self._row_h = 22
         self.hide()
@@ -68,7 +69,8 @@ class TooltipWidget(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
 
         # Background rounded rect
-        bg = QColor(self.settings.get("color_bg", DEFAULT_SETTINGS["color_bg"]))
+        provider = provider_settings(self.settings, self.provider_id)
+        bg = QColor(provider.get("color_bg", DEFAULT_SETTINGS["color_bg"]))
         bg.setAlpha(240)
         p.setBrush(bg)
         p.setPen(Qt.NoPen)
@@ -95,12 +97,14 @@ class TooltipWidget(QWidget):
 
         # Plan name
         sub_type = self._data.get("_subscriptionType", "unknown")
-        plan_label = {"pro": "Pro", "max": "Max", "team": "Team", "enterprise": "Enterprise"}.get(sub_type, sub_type.title() if sub_type else "Unknown")
+        plan_label = {"pro": "Pro", "max": "Max", "team": "Team", "enterprise": "Enterprise"}.get(sub_type, sub_type.title() if sub_type else "")
         tier = self._data.get("_rateLimitTier", "")
 
         p.setPen(QColor(self.settings.get("font_color", DEFAULT_SETTINGS["font_color"])))
         p.setFont(QFont(self.settings.get("font_family", DEFAULT_SETTINGS["font_family"]), hfs + 2, QFont.Bold))
-        p.drawText(x_pad, y + 14, f"Claude {plan_label}")
+        provider_name = provider.get("name", "Subscription")
+        title = provider_name if not plan_label or plan_label.lower() == provider_name.lower() else f"{provider_name} {plan_label}"
+        p.drawText(x_pad, y + 14, title)
 
         if tier:
             tier_short = tier.replace("default_claude_", "").replace("_", " ").title()
@@ -126,7 +130,7 @@ class TooltipWidget(QWidget):
 
             # Highlight background for active row
             if is_active:
-                hl = QColor(self.settings.get("color_orange", DEFAULT_SETTINGS["color_orange"]))
+                hl = QColor(provider.get("color_orange", DEFAULT_SETTINGS["color_orange"]))
                 hl.setAlpha(25)
                 p.setPen(Qt.NoPen)
                 p.setBrush(hl)
@@ -142,7 +146,7 @@ class TooltipWidget(QWidget):
             pct_text = f"{util:.0f}%"
             fm = QFontMetrics(p.font())
             tw = fm.horizontalAdvance(pct_text)
-            p.setPen(color_for_percent(util, self.settings))
+            p.setPen(color_for_percent(util, self.settings, self.provider_id))
             p.drawText(self._width - x_pad - tw, y + 13, pct_text)
             y += 18
 
@@ -155,7 +159,7 @@ class TooltipWidget(QWidget):
             # Bar fill
             fill_w = max(0, min(bar_w, bar_w * util / 100))
             if fill_w > 0:
-                c = color_for_percent(util, self.settings)
+                c = color_for_percent(util, self.settings, self.provider_id)
                 p.setBrush(c)
                 p.drawRoundedRect(x_pad, y, int(fill_w), bar_h, 3, 3)
 
